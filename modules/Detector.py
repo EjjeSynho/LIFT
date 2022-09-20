@@ -1,20 +1,9 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Feb 24 14:37:29 2020
-
-@author: cheritie
-"""
-
 import numpy as np
 from numpy.core.fromnumeric import shape
 from numpy.random import Generator, PCG64
-import inspect
-#from tools.real_data import GetDetectorMaps
-#from tools.fit_gaussian import FitAndPlotGauss1D
 import matplotlib.pyplot as plt
 from scipy import signal as sg
-import cupy as cp
-from cupyx.scipy.signal import convolve2d
+
 
 class Detector:
     def __init__(self, pixel_size, sampling_time, samples=1, RON=0, QE=1):
@@ -32,13 +21,7 @@ class Detector:
 
     def getFrame(self, PSF, noise=True, integrate=True):
         if self.object is not None:
-            if not self.GPU:
-                PSF = sg.convolve2d(PSF, self.object, boundary='symm', mode='same') / self.object.sum()
-            else:
-                self.PSF_GPU = cp.array(PSF, dtype=cp.float32)
-                self.object_GPU = cp.array(self.object, dtype=cp.float32)
-                self.PSF_GPU = convolve2d(self.PSF_GPU, self.object_GPU, mode='same', boundary='symm') / self.object_GPU.sum() #, fillvalue=0)
-                PSF = cp.asnumpy(self.PSF_GPU)
+            PSF = sg.convolve2d(PSF, self.object, boundary='symm', mode='same') / self.object.sum()
 
         if noise: 
             R_n = PSF + self.readoutNoise

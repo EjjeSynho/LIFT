@@ -1,7 +1,2 @@
-modules/__pycache__/LIFT.cpython-39.pyc
-modules/__pycache__/Source.cpython-39.pyc
-modules/__pycache__/Detector.cpython-39.pyc
-modules/__pycache__/Zernike.cpython-39.pyc
-modules/__pycache__/Telescope.cpython-39.pyc
-tools/__pycache__/misc.cpython-39.pyc
-tools/__pycache__/fit_gaussian.cpython-39.pyc
+__pycache__/
+modules/__pycache__/
