@@ -61,7 +61,8 @@ OPD_diversity = Z_basis.Mode(3)*diversity_shift
 
 #%%  ============================ Code in this cell is NOT must have ============================
 # Synthetic PSF
-coefs_0 = np.array([10, -15, 200, 20, -45, 34, 21, -29, 20, 10])*1e-9 #[m]
+#coefs_0 = np.array([10, -15, 200, 20, -45, 34, 21, -29, 20, 10])*1e-9 #[m]
+coefs_0 = np.array([0, 0, 200, 0, 0, 0, 0, 0, 0, 0])*1e-9 #[m]
 
 def PSFfromCoefs(coefs):
     wavefront = Z_basis.modesFullRes @ coefs + OPD_diversity
@@ -100,7 +101,40 @@ plt.show()
 
 print('WFE: ', np.round(np.std(WF_0-WF_1)).astype('int'), '[nm]')
 
-plt.imshow(np.hstack([np.log(PSF_0), np.log(PSF_1), np.log(np.abs(PSF_0-PSF_1))]))
+#plt.imshow(np.hstack([np.log(PSF_0), np.log(PSF_1), np.log(np.abs(PSF_0-PSF_1))]))
+plt.imshow(np.hstack([PSF_0, PSF_1, np.abs(PSF_0-PSF_1)]))
 plt.show()
 
-# %%
+print('Coefficients difference: ' (coefs_0[:5]-coefs_1)*1e9 )
+
+#%% ------- Linearity range scanning -------
+def_scan = np.arange(-300,301,50)*1e-9
+modes = [0,1,2,3,4]
+
+defocus_est = []
+
+for defocus in def_scan:
+    coefs_def = np.zeros(10)
+    coefs_def[2] = defocus
+
+    PSF = PSFfromCoefs(coefs_def)
+    PSF_noisy_DITs, _ = tel.det.getFrame(PSF, noise=True, integrate=False)
+    R_n = PSF_noisy_DITs.var(axis=2)    
+    PSF_0 = PSF_noisy_DITs.mean(axis=2) 
+    R_n =  R_n * 0 + 1.0
+
+    coefs_1, PSF_1, _ = estimator.Reconstruct(PSF_0, R_n=R_n, mode_ids=modes, optimize_norm=False)
+    defocus_est.append(coefs_1[2])
+
+defocus_est = np.array(defocus_est)
+ax = plt.gca() #you first need to get the axis handle
+ax.set_aspect(1)
+plt.plot(def_scan*1e9, defocus_est*1e9)
+plt.plot(np.array([def_scan.min()*1e9, def_scan.max()*1e9]), np.array([def_scan.min()*1e9, def_scan.max()*1e9]))
+plt.grid()
+plt.xlim([def_scan.min()*1e9, def_scan.max()*1e9])
+plt.ylim([def_scan.min()*1e9, def_scan.max()*1e9])
+plt.xlabel('Defocus [nm]')
+plt.ylabel('Defocus [nm]')
+plt.title('Linearity range scan (beautiful)')
+plt.show()
