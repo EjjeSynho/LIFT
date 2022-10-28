@@ -13,11 +13,11 @@ Created on Wed Feb 19 10:29:12 2020
 """
 
 import numpy as np
+import cupy as cp
 
 class Zernike:
     def __init__(self, modes_num=1):
         self.nModes = modes_num
-        #self.modes = None
         self.modesFullRes = None
         
         self.modes_names = [
@@ -29,7 +29,7 @@ class Zernike:
             'Secondary trefoil horiz', 'Secondary trefoil vert',
             'Pentafoil horiz', 'Pentafoil vert'
         ]
-    
+        self.gpu = False
 
     def zernikeRadialFunc(self, n, m, r):
         """
@@ -82,9 +82,13 @@ class Zernike:
             N (int): The diameter of the zernike more in pixels
          Returns:
             ndarray: The Zernike mode
-         """
-        X, Y = np.where(tel.pupil > 0)
-        resolution = tel.pupil.shape[0]
+        """
+        self.gpu = tel.gpu
+        if self.gpu: pupil = tel.pupil.get()
+        else: pupil = tel.pupil
+
+        X, Y = np.where(pupil > 0)
+        resolution = pupil.shape[0]
 
         X = ( X-(resolution + resolution%2-1)/2 ) / resolution * tel.D
         Y = ( Y-(resolution + resolution%2-1)/2 ) / resolution * tel.D
@@ -92,7 +96,7 @@ class Zernike:
         R = np.sqrt(X**2 + Y**2)
         R = R / R.max()
         theta = np.arctan2(Y, X)
-        #self.modes = np.zeros( [tel.pupil.sum().astype('int'), self.nModes] )
+        #self.modes = np.zeros( [pupil.sum().astype('int'), self.nModes] )
         self.modesFullRes = np.zeros([resolution**2, self.nModes])
 
         for i in range(1, self.nModes+1):
@@ -110,28 +114,32 @@ class Zernike:
             Z /= np.std(Z)
 
             #self.modes[:, i-1] = Z
-            self.modesFullRes[np.where(np.reshape(tel.pupil, resolution*resolution)>0), i-1] = Z
+            self.modesFullRes[np.where(np.reshape(pupil, resolution*resolution)>0), i-1] = Z
             
         self.modesFullRes = np.reshape( self.modesFullRes, [resolution, resolution, self.nModes] )
+        if self.gpu:
+            self.modesFullRes = cp.array(self.modesFullRes, dtype=cp.float32)
 
 
     def modeName(self, index):
         if index < 0:
             return('Incorrent index!')
         elif index >= len(self.modes_names):
-            return('Z '+str(index+2))
+            return('Z ' + str(index+2))
         else:
             return(self.modes_names[index])
 
 
     # Generate wavefront shape corresponding to given model coefficients and modal basis 
     def wavefrontFromModes(self, tel, coefs):
-        if isinstance(coefs, list):
-            coefs = np.array(coefs)
+        if self.gpu: xp = cp
+        else: xp = np
+
+        if isinstance(coefs, list): coefs = xp.array(coefs).flatten()
 
         if self.modesFullRes is None:
             print('Warning: Zernike modes were not computed! Calculating...')
-            self.nModes = np.max(np.array([coefs.shape[0], self.nModes]))
+            self.nModes = xp.max(xp.array([coefs.shape[0], self.nModes]))
             self.computeZernike(tel)
 
         if self.nModes < coefs.shape[0]:
@@ -141,9 +149,9 @@ class Zernike:
 
         phase = 0
         for i in range(coefs.shape[0]):
-            if (coefs[i] is not None) and (not np.isnan(coefs[i])) and (np.abs(coefs[i])>1e-13):
+            if (coefs[i] is not None) and (not xp.isnan(coefs[i]).item()) and (xp.abs(coefs[i]).item()>1e-13):
                 phase += self.modesFullRes[:,:,i] * coefs[i]
         return phase
 
     def Mode(self, coef):
-        return np.copy(self.modesFullRes[:,:,coef])
+        return self.modesFullRes[:,:,coef]

@@ -1,6 +1,7 @@
 from skimage.transform import resize
 import numpy as np
 import numexpr as ne
+import cupy as cp
 
 
 class Telescope:
@@ -9,24 +10,28 @@ class Telescope:
                  pupil,
                  diameter,
                  focalLength,
-                 pupilReflectivity = 1):
+                 pupilReflectivity = 1.0,
+                 gpu_flag = False):
      
-        self.img_resolution     = img_resolution  # Sampling of the telescope's PSF
-        self.D                  = diameter        # Diameter in m
-        self.f                  = focalLength     # Effective focal length of the telescope [m]
-        self.object             = None
-
-        self.pupil  = pupil
+        self.pupil = pupil
         assert self.pupil.shape[0] == self.pupil.shape[1], "Error: pupil mask must be a square array!"
 
-        self.pupilReflectivity = pupilReflectivity    # A non uniform reflectivity can be input by the user
-        self.src          = None                      # a source object associated to the telescope object
-        self.det          = None
-        self.tag          = 'telescope'               # a tag of the object
-    
+        self.img_resolution    = img_resolution    # Sampling of the telescope's PSF
+        self.pupilReflectivity = pupilReflectivity # A non uniform reflectivity can be input by the user
+        self.D                 = diameter          # Diameter in m
+        self.f                 = focalLength       # Effective focal length of the telescope [m]
+        self.object            = None
+        self.src               = None              # a source object associated to the telescope object
+        self.det               = None
+        self.tag               = 'telescope'       # a tag of the object
+        self.gpu               = gpu_flag
+
+        if self.gpu:
+            self.pupil = cp.array(self.pupil, dtype=cp.float32)
+
         self.area = np.pi * self.D**2 / 4
-        self.fluxMap = lambda nPhotons, sampling_time: self.pupilReflectivity * self.pupil/np.sum(self.pupil) * nPhotons * self.area * sampling_time
-        self.flux = lambda nPhotons, sampling_time: self.pupilReflectivity / np.sum(self.pupil) * nPhotons * self.area * sampling_time
+        self.fluxMap = lambda nPhotons, sampling_time: self.pupilReflectivity * self.pupil/self.pupil.sum() * nPhotons * self.area * sampling_time
+        self.flux = lambda nPhotons, sampling_time: self.pupilReflectivity /self.pupil.sum() * nPhotons * self.area * sampling_time
 
         ident = 20
         char = '-'
@@ -37,7 +42,7 @@ class Telescope:
 
 
     def PropagateField(self, amplitude, phase, wavelength, return_intensity, oversampling=1):
-
+        
         zeroPaddingFactor = self.f / self.det.pixel_size * wavelength / self.D
         resolution = self.pupil.shape[0]
     
@@ -49,30 +54,54 @@ class Telescope:
         if zeroPaddingFactor * oversampling < 2:
             oversampling = 2.0 / zeroPaddingFactor
 
+        img_size = np.ceil(self.img_resolution*oversampling).astype('int')
         N = np.fix(zeroPaddingFactor * oversampling * resolution).astype('int')
         pad_width = np.ceil((N-resolution)/2).astype('int')
-        supportPadded = np.pad(amplitude * np.exp(1j*phase), pad_width=((pad_width,pad_width),(pad_width,pad_width)), constant_values=0)
-        N = supportPadded.shape[0] # make sure the number of pxels is correct after the padding
-        img_size = np.ceil(self.img_resolution*oversampling).astype('int')
 
-        # PSF computation
-        [xx,yy] = np.meshgrid( np.linspace(0,N-1,N), np.linspace(0,N-1,N) )        
-        center_aligner = np.exp(-1j*np.pi/N * (xx+yy) * (1-self.img_resolution%2))
-        #                                                        ^--- this is to account odd/even number of pixels
 
-        # Propagate with shifting the Fourier spectrum
-        PSF = np.fft.fftshift(1/N * np.fft.fft2(np.fft.ifftshift(supportPadded*center_aligner)))
+        if self.gpu:
+            if not hasattr(amplitude, 'device'): amplitude = cp.array(amplitude, dtype=cp.float32)
+            if not hasattr(phase, 'device'):     phase     = cp.array(phase, dtype=cp.complex64)
+            
+            supportPadded = cp.pad(amplitude * cp.exp(1j*phase), pad_width=pad_width, constant_values=0)
+            N = supportPadded.shape[0] # make sure the number of pxels is correct after the padding
 
-        if N%2 == img_size%2:
-            shift_pix = 0
-        else:
-            if N%2 == 0:
-                shift_pix = 1
+            # PSF computation
+            [xx,yy] = cp.meshgrid( cp.linspace(0,N-1,N), cp.linspace(0,N-1,N), copy=False )    
+            center_aligner = cp.exp(-1j*cp.pi/N * (xx+yy) * (1-self.img_resolution%2)).astype(cp.complex64)
+            #                                                        ^--- this is to account odd/even number of pixels
+            # Propagate with Fourier shifting
+            PSF = cp.fft.fftshift(1/N * cp.fft.fft2(cp.fft.ifftshift(supportPadded*center_aligner)))
+
+            if N % 2 == img_size % 2: shift_pix = 0
             else:
-                shift_pix = -1
+                if N % 2 == 0: shift_pix = 1
+                else: shift_pix = -1
 
-        ids = np.array([np.ceil(N/2) - img_size//2 + (1-N%2)-1, np.ceil(N/2)+ img_size//2 + shift_pix]).astype('uint')
-        PSF = PSF[ids[0]:ids[1], ids[0]:ids[1]]
+            ids = np.array([np.ceil(N/2) - img_size//2 + (1-N%2)-1, np.ceil(N/2)+ img_size//2 + shift_pix]).astype('uint')
+            PSF = cp.asnumpy( PSF[ids[0]:ids[1], ids[0]:ids[1]] ) # transfer data back to RAM from VRAM
+
+        else:
+            supportPadded = np.pad(amplitude * np.exp(1j*phase), pad_width=((pad_width,pad_width),(pad_width,pad_width)), constant_values=0)
+            N = supportPadded.shape[0] # make sure the number of pxels is correct after the padding
+
+            # PSF computation
+            [xx,yy] = np.meshgrid( np.linspace(0,N-1,N), np.linspace(0,N-1,N) )        
+            center_aligner = np.exp(-1j*np.pi/N * (xx+yy) * (1-self.img_resolution%2))
+            #                                                        ^--- this is to account odd/even number of pixels
+
+            # Propagate with shifting the Fourier spectrum
+            PSF = np.fft.fftshift(1/N * np.fft.fft2(np.fft.ifftshift(supportPadded*center_aligner)))
+
+            if N % 2 == img_size % 2:
+                shift_pix = 0
+            else:
+                if N % 2 == 0: shift_pix = 1
+                else: shift_pix = -1
+
+            ids = np.array([np.ceil(N/2) - img_size//2+(1-N%2)-1, np.ceil(N/2) + img_size//2+shift_pix]).astype('uint')
+            PSF = PSF[ids[0]:ids[1], ids[0]:ids[1]]
+
 
         # Take oversampling into the account
         if oversampling > 1:
@@ -92,37 +121,58 @@ class Telescope:
         else:
             if return_intensity:
                 PSF = np.abs(PSF)**2
-        return PSF
+
+        if self.gpu:
+            return cp.array(PSF)
+        else:
+            return PSF
 
 
-    def ComputePSF(self, intensity=True, oversampling=1, polychrome=False):
+    def ComputePSF(self, intensity=True, polychrome=False, oversampling=1):
+        xp = np if self.gpu else cp
+
         if self.src.tag != 'source':
             print('Error: no proper source object is attached')
             return None
 
+        if self.gpu:
+            mempool = cp.get_default_memory_pool()
+            pinned_mempool = cp.get_default_pinned_memory_pool()
+
         PSF_chromatic = []
         for point in self.src.spectrum:
-            phase = 2 * np.pi / point['wavelength'] * self.src.OPD
-            amplitude = np.sqrt(self.flux(point['flux'], self.det.sampling_time)) * self.pupil
+            phase = 2 * xp.pi / point['wavelength'] * self.src.OPD
+            amplitude = xp.sqrt(self.flux(point['flux'], self.det.sampling_time)) * self.pupil
             PSF_chromatic.append( self.PropagateField(amplitude, phase, point['wavelength'], intensity, oversampling) )
+            
+            if self.gpu: # clear GPU buffers
+                mempool.free_all_blocks()
+                pinned_mempool.free_all_blocks() # clear GPU memory
 
-        PSF_chromatic = np.dstack(PSF_chromatic)
+        PSF_chromatic = xp.dstack(PSF_chromatic)
+
+        #if intensity:
+        #    if polychrome:
+        #        return PSF_chromatic
+        #    else:
+        #        return PSF_chromatic.sum(axis=2)
+        #else:
+        #    if PSF_chromatic.shape[2] == 1:
+        #        return PSF_chromatic[:,:,0]
+        #    else:
+        #        return PSF_chromatic
 
         if intensity:
-            if polychrome:
-                return PSF_chromatic
-            else:
-                return PSF_chromatic.sum(axis=2)
+            if not polychrome: return PSF_chromatic.sum(axis=2)
         else:
-            if PSF_chromatic.shape[2] == 1:
-                return PSF_chromatic[:,:,0]
-            else:
-                return PSF_chromatic
+            if PSF_chromatic.shape[2] == 1: return PSF_chromatic.squeeze(2)
+
+        return PSF_chromatic
 
 
     def GetAxesPSF(self, PSF, units):
         angular_size = self.det.pixel_size / self.f
-        fl = float(not PSF.shape[0]%2)
+        fl = float(not PSF.shape[0]%2) # flag to check if PSF has even number of pixels
 
         limits_x = np.array( [-PSF.shape[0]/2, PSF.shape[0]/2-fl]) + 0.5*fl
         limits_y = np.array( [-PSF.shape[1]/2, PSF.shape[1]/2-fl]) + 0.5*fl
@@ -143,6 +193,6 @@ class Telescope:
 
 
     def resetOPD(self):
-        self.OPD = np.copy(self.pupil) # re-initialize the telescope OPD to a flat wavefront
+        self.OPD = self.pupil.copy() # re-initialize the telescope OPD to a flat wavefront
     
 

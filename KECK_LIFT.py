@@ -1,7 +1,10 @@
 #%%
+%reload_ext autoreload
+%autoreload 2
 # Commom modules
 import matplotlib.pyplot as plt
 import numpy as np
+import cupy as cp
 from astropy.io import fits
 from skimage.transform import resize
 import skimage.measure
@@ -10,8 +13,6 @@ import skimage.measure
 from modules.Telescope import Telescope
 from modules.Detector  import Detector
 from modules.Source    import Source
-from modules.Zernike   import Zernike
-from modules.LIFT      import LIFT
 
 # Local auxillary modules
 from tools.misc import magnitudeFromPSF, TruePhotonsFromMag
@@ -35,17 +36,18 @@ sampling_time = 0.1 # [s]
 num_samples = 10
 
 # If the number of pixels in image is odd, the code will automatically center generated PSFs it to one pixel in the middle
-tel = Telescope(img_resolution    = 33,
+tel = Telescope(img_resolution        = 33,
                     pupil             = pupil_small,
                     diameter          = D,
                     focalLength       = f,
-                    pupilReflectivity = 1.0)
+                    pupilReflectivity = 1.0,
+                    gpu_flag          = True)
 
 det = Detector(pixel_size = pixel_size,
                 sampling_time = sampling_time,
                 samples       = num_samples,
-                RON           = 4.0, #used to generate PSF or the synthetic R_n
-                QE            = 1.0) #not used
+                RON           = 4.0, # used to generate PSF or the synthetic R_n [photons]
+                QE            = 1.0) # not used
 det.object = None
 det * tel
 ngs_poly = Source([('H', 10.0)]) # Initialize a target of H_mag=10
@@ -58,14 +60,18 @@ Z_basis.computeZernike(tel)
 diversity_shift = 200e-9 #[m]
 OPD_diversity = Z_basis.Mode(3)*diversity_shift
 
-
 #%%  ============================ Code in this cell is NOT must have ============================
 # Synthetic PSF
 #coefs_0 = np.array([10, -15, 200, 20, -45, 34, 21, -29, 20, 10])*1e-9 #[m]
 coefs_0 = np.array([0, 0, 200, 0, 0, 0, 0, 0, 0, 0])*1e-9 #[m]
 
+
 def PSFfromCoefs(coefs):
-    wavefront = Z_basis.modesFullRes @ coefs + OPD_diversity
+    if hasattr(Z_basis.modesFullRes, 'device'):
+        wavefront = Z_basis.modesFullRes.get() @ coefs + OPD_diversity.get()
+    else:
+        wavefront = Z_basis.modesFullRes @ coefs + OPD_diversity
+        
     tel.src.OPD = wavefront
     PSF = tel.ComputePSF()
     tel.src.OPD *= 0.0 # zero out just in case
@@ -81,17 +87,25 @@ PSF_0 = PSF_noisy_DITs.mean(axis=2) # input PSF
 R_n =  R_n * 0 + 1.0 #okay, lets assume it's just all ones for now
 
 #%%  ============================ Code in this cell is must have ============================
+from modules.Zernike   import Zernike
+from modules.LIFT      import LIFT
+
 estimator = LIFT(tel, Z_basis, OPD_diversity, 20)
 
 #modes = [0,1,2,3,4,5,6,7,8,9]
 modes = [0,1,2,3,4]
 #           Flux optimization is something to be reconsidered --------------V
-coefs_1, PSF_1, _ = estimator.Reconstruct(PSF_0, R_n=R_n, mode_ids=modes, optimize_norm=False)
+coefs_1, PSF_1, _ = estimator.ReconstructGPU(PSF_0, R_n=R_n, mode_ids=modes, optimize_norm=False)
 
 #%%  ============================ Code in this cell is NOT must have ============================
 def GenerateWFE(coefs):
-    Wf_aberrated = np.sum(Z_basis.modesFullRes[:,:,modes]*coefs[modes], axis=2) # [m]
-    return (OPD_diversity + Wf_aberrated)*1e9 #[nm]
+    if hasattr(Z_basis.modesFullRes, 'device'):
+        Wf_aberrated = (Z_basis.modesFullRes[:,:,modes]*cp.array(coefs[modes])).sum(axis=2) # [m]
+        return cp.asnumpy( (OPD_diversity + Wf_aberrated)*1e9 ) #[nm]
+    else:
+        Wf_aberrated = (Z_basis.modesFullRes[:,:,modes]*coefs[modes]).sum(axis=2) # [m]        
+        return (OPD_diversity + Wf_aberrated)*1e9 #[nm]
+
 
 WF_0 = GenerateWFE(coefs_0)
 WF_1 = GenerateWFE(coefs_1)
@@ -105,7 +119,7 @@ print('WFE: ', np.round(np.std(WF_0-WF_1)).astype('int'), '[nm]')
 plt.imshow(np.hstack([PSF_0, PSF_1, np.abs(PSF_0-PSF_1)]))
 plt.show()
 
-print('Coefficients difference: ' (coefs_0[:5]-coefs_1)*1e9 )
+print('Coefficients difference: ', (coefs_0[:5]-coefs_1)*1e9 )
 
 #%% ------- Linearity range scanning -------
 def_scan = np.arange(-300,301,50)*1e-9
@@ -119,11 +133,11 @@ for defocus in def_scan:
 
     PSF = PSFfromCoefs(coefs_def)
     PSF_noisy_DITs, _ = tel.det.getFrame(PSF, noise=True, integrate=False)
-    R_n = PSF_noisy_DITs.var(axis=2)    
-    PSF_0 = PSF_noisy_DITs.mean(axis=2) 
+    R_n = PSF_noisy_DITs.var(axis=2) 
+    PSF_0 = PSF_noisy_DITs.mean(axis=2)
     R_n =  R_n * 0 + 1.0
 
-    coefs_1, PSF_1, _ = estimator.Reconstruct(PSF_0, R_n=R_n, mode_ids=modes, optimize_norm=False)
+    coefs_1, PSF_1, _ = estimator.ReconstructGPU(PSF_0, R_n=R_n, mode_ids=modes, optimize_norm=False)
     defocus_est.append(coefs_1[2])
 
 defocus_est = np.array(defocus_est)
@@ -138,3 +152,4 @@ plt.xlabel('Defocus [nm]')
 plt.ylabel('Defocus [nm]')
 plt.title('Linearity range scan (beautiful)')
 plt.show()
+# %%

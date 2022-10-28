@@ -3,7 +3,7 @@ from numpy.core.fromnumeric import shape
 from numpy.random import Generator, PCG64
 import matplotlib.pyplot as plt
 from scipy import signal as sg
-
+import cupy as cp
 
 class Detector:
     def __init__(self, pixel_size, sampling_time, samples=1, RON=0, QE=1):
@@ -19,7 +19,13 @@ class Detector:
         self.object_GPU    = None
         self.PSF_GPU       = None
 
-    def getFrame(self, PSF, noise=True, integrate=True):
+    def getFrame(self, PSF_inp, noise=True, integrate=True):
+
+        if hasattr(PSF_inp, 'device'):
+            PSF = cp.asnumpy(PSF_inp)
+        else:
+            PSF = np.copy(PSF_inp)
+
         if self.object is not None:
             PSF = sg.convolve2d(PSF, self.object, boundary='symm', mode='same') / self.object.sum()
 
