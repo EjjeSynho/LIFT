@@ -13,6 +13,8 @@ import skimage.measure
 from modules.Telescope import Telescope
 from modules.Detector  import Detector
 from modules.Source    import Source
+from modules.Zernike   import Zernike
+from modules.LIFT      import LIFT
 
 # Local auxillary modules
 from tools.misc import magnitudeFromPSF, TruePhotonsFromMag
@@ -87,15 +89,12 @@ PSF_0 = PSF_noisy_DITs.mean(axis=2) # input PSF
 R_n =  R_n * 0 + 1.0 #okay, lets assume it's just all ones for now
 
 #%%  ============================ Code in this cell is must have ============================
-from modules.Zernike   import Zernike
-from modules.LIFT      import LIFT
-
 estimator = LIFT(tel, Z_basis, OPD_diversity, 20)
 
 #modes = [0,1,2,3,4,5,6,7,8,9]
 modes = [0,1,2,3,4]
 #           Flux optimization is something to be reconsidered --------------V
-coefs_1, PSF_1, _ = estimator.ReconstructGPU(PSF_0, R_n=R_n, mode_ids=modes, optimize_norm=False)
+coefs_1, PSF_1, _ = estimator.Reconstruct(PSF_0, R_n=R_n, mode_ids=modes, optimize_norm=False)
 
 #%%  ============================ Code in this cell is NOT must have ============================
 def GenerateWFE(coefs):
@@ -105,7 +104,6 @@ def GenerateWFE(coefs):
     else:
         Wf_aberrated = (Z_basis.modesFullRes[:,:,modes]*coefs[modes]).sum(axis=2) # [m]        
         return (OPD_diversity + Wf_aberrated)*1e9 #[nm]
-
 
 WF_0 = GenerateWFE(coefs_0)
 WF_1 = GenerateWFE(coefs_1)
@@ -131,13 +129,12 @@ for defocus in def_scan:
     coefs_def = np.zeros(10)
     coefs_def[2] = defocus
 
-    PSF = PSFfromCoefs(coefs_def)
-    PSF_noisy_DITs, _ = tel.det.getFrame(PSF, noise=True, integrate=False)
+    PSF_noisy_DITs, _ = tel.det.getFrame(PSFfromCoefs(coefs_def), noise=True, integrate=False)
     R_n = PSF_noisy_DITs.var(axis=2) 
     PSF_0 = PSF_noisy_DITs.mean(axis=2)
     R_n =  R_n * 0 + 1.0
 
-    coefs_1, PSF_1, _ = estimator.ReconstructGPU(PSF_0, R_n=R_n, mode_ids=modes, optimize_norm=False)
+    coefs_1, PSF_1, _ = estimator.Reconstruct(PSF_0, R_n=R_n, mode_ids=modes, optimize_norm=False)
     defocus_est.append(coefs_1[2])
 
 defocus_est = np.array(defocus_est)

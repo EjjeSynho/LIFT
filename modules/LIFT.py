@@ -99,7 +99,7 @@ class LIFT:
         return xp.dstack(H).sum(axis=2) # sum all spectral interaction matricies
 
 
-    def Reconstruct(self, PSF, R_n, mode_ids, A_0=None, A_ref=None, verbous=False, optimize_norm=False):
+    def ReconstructCPU(self, PSF, R_n, mode_ids, A_0=None, A_ref=None, verbous=False, optimize_norm=False):
         C  = []         # optimization criterion
         Hs = []         # interaction matrices for every iteration
         P_MLs = []      # estimators for every iteration
@@ -309,3 +309,10 @@ class LIFT:
                 'C'    : cp.asnumpy( cp.array(C) )
             }
         return cp.asnumpy(self.unpack(A_est, mode_ids)), cp.asnumpy(PSF_cap), history
+
+
+    def Reconstruct(self, PSF, R_n, mode_ids, A_0=None, A_ref=None, verbous=False, optimize_norm=False):
+        if self.gpu:
+            return self.ReconstructGPU(PSF, R_n, mode_ids, A_0, A_ref, verbous, optimize_norm)
+        else:
+            return self.ReconstructCPU(PSF, R_n, mode_ids, A_0, A_ref, verbous, optimize_norm)

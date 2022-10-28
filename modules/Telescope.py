@@ -129,7 +129,7 @@ class Telescope:
 
 
     def ComputePSF(self, intensity=True, polychrome=False, oversampling=1):
-        xp = np if self.gpu else cp
+        xp = cp if self.gpu else np
 
         if self.src.tag != 'source':
             print('Error: no proper source object is attached')
