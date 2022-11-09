@@ -8,6 +8,7 @@ import cupy as cp
 from astropy.io import fits
 from skimage.transform import resize
 import skimage.measure
+from tqdm import tqdm
 
 # Local modules
 from modules.Telescope import Telescope
@@ -38,7 +39,7 @@ sampling_time = 0.1 # [s]
 num_samples = 10
 
 # If the number of pixels in image is odd, the code will automatically center generated PSFs it to one pixel in the middle
-tel = Telescope(img_resolution        = 33,
+tel = Telescope(img_resolution        = 17,
                     pupil             = pupil_small,
                     diameter          = D,
                     focalLength       = f,
@@ -52,7 +53,7 @@ det = Detector(pixel_size = pixel_size,
                 QE            = 1.0) # not used
 det.object = None
 det * tel
-ngs_poly = Source([('H', 10.0)]) # Initialize a target of H_mag=10
+ngs_poly = Source([('H', 0.0)]) # Initialize a target of H_mag=10
 ngs_poly * tel # attach the source to the telescope
 
 # Initialize modal basis
@@ -120,12 +121,12 @@ plt.show()
 print('Coefficients difference: ', (coefs_0[:5]-coefs_1)*1e9 )
 
 #%% ------- Linearity range scanning -------
-def_scan = np.arange(-300,301,50)*1e-9
+def_scan = np.arange(-100,101,10)*1e-9
 modes = [0,1,2,3,4]
 
 defocus_est = []
 
-for defocus in def_scan:
+for defocus in tqdm(def_scan):
     coefs_def = np.zeros(10)
     coefs_def[2] = defocus
 
@@ -147,6 +148,6 @@ plt.xlim([def_scan.min()*1e9, def_scan.max()*1e9])
 plt.ylim([def_scan.min()*1e9, def_scan.max()*1e9])
 plt.xlabel('Defocus [nm]')
 plt.ylabel('Defocus [nm]')
-plt.title('Linearity range scan (beautiful)')
+plt.title('Linearity range scan ('+str(ang_pixel)+' mas)')
 plt.show()
 # %%

@@ -1,9 +1,10 @@
+import sys
+sys.path.insert(0, '..')
+
 from skimage.transform import resize
 import numpy as np
-import numexpr as ne
 import cupy as cp
-
-
+from tools.misc import bin
 class Telescope:
     def __init__(self,
                  img_resolution,
@@ -42,22 +43,24 @@ class Telescope:
 
 
     def PropagateField(self, amplitude, phase, wavelength, return_intensity, oversampling=1):
-        
         zeroPaddingFactor = self.f / self.det.pixel_size * wavelength / self.D
         resolution = self.pupil.shape[0]
     
         if self.img_resolution > zeroPaddingFactor*resolution:
-            print('Error: image sampling is too big for the pupil sampling. Try using more pixels in pupil mask')
+            print('Error: image has too many pixels for this pupil sampling. Try using a pupil mask with more pixels')
             return None
 
-        # If PSF is strongly undersampled, appply the oversampling trick
+        # If PSF is undersampled apply the integer oversampling
         if zeroPaddingFactor * oversampling < 2:
-            oversampling = 2.0 / zeroPaddingFactor
+            oversampling = (np.ceil(2.0/zeroPaddingFactor)).astype('int')
+        
+        # This is to ensure that PSF will be binned properly if number of pixels is odd
+        if oversampling % 2 != self.img_resolution % 2:
+            oversampling += 1
 
         img_size = np.ceil(self.img_resolution*oversampling).astype('int')
         N = np.fix(zeroPaddingFactor * oversampling * resolution).astype('int')
         pad_width = np.ceil((N-resolution)/2).astype('int')
-
 
         if self.gpu:
             if not hasattr(amplitude, 'device'): amplitude = cp.array(amplitude, dtype=cp.float32)
@@ -73,13 +76,16 @@ class Telescope:
             # Propagate with Fourier shifting
             PSF = cp.fft.fftshift(1/N * cp.fft.fft2(cp.fft.ifftshift(supportPadded*center_aligner)))
 
-            if N % 2 == img_size % 2: shift_pix = 0
+            # Again, this is to properly crop a PSF with the odd/even number of pixels
+            if N % 2 == img_size % 2:
+                shift_pix = 0
             else:
                 if N % 2 == 0: shift_pix = 1
                 else: shift_pix = -1
 
             ids = np.array([np.ceil(N/2) - img_size//2 + (1-N%2)-1, np.ceil(N/2)+ img_size//2 + shift_pix]).astype('uint')
-            PSF = cp.asnumpy( PSF[ids[0]:ids[1], ids[0]:ids[1]] ) # transfer data back to RAM from VRAM
+            #PSF = cp.asnumpy( PSF[ids[0]:ids[1], ids[0]:ids[1]] ) # transfer data back to RAM from VRAM
+            PSF = PSF[ids[0]:ids[1], ids[0]:ids[1]] # transfer data back to RAM from VRAM
 
         else:
             supportPadded = np.pad(amplitude * np.exp(1j*phase), pad_width=((pad_width,pad_width),(pad_width,pad_width)), constant_values=0)
@@ -102,8 +108,16 @@ class Telescope:
             ids = np.array([np.ceil(N/2) - img_size//2+(1-N%2)-1, np.ceil(N/2) + img_size//2+shift_pix]).astype('uint')
             PSF = PSF[ids[0]:ids[1], ids[0]:ids[1]]
 
+        if oversampling > 1:
+            PSF = bin(PSF, oversampling)
+
+        if return_intensity:
+            if self.gpu: PSF = cp.abs(PSF)**2
+            else: PSF = np.abs(PSF)**2
+        return PSF
 
         # Take oversampling into the account
+        '''        
         if oversampling > 1:
             if return_intensity:
                 PSF = np.abs(PSF)**2
@@ -118,6 +132,8 @@ class Telescope:
                 PSF = Re + 1j*Im
                 energy_after = np.sum( np.abs(PSF)**2 )
                 PSF *= (energy_before/energy_after) # to fix distribution of energy in pixels
+                
+
         else:
             if return_intensity:
                 PSF = np.abs(PSF)**2
@@ -126,7 +142,7 @@ class Telescope:
             return cp.array(PSF)
         else:
             return PSF
-
+        '''
 
     def ComputePSF(self, intensity=True, polychrome=False, oversampling=1):
         xp = cp if self.gpu else np

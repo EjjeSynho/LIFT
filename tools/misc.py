@@ -1,4 +1,16 @@
 import numpy as np
+import cupy as cp
+
+
+# To make this function work, one must ensure that size of inp can be divided by N
+def bin(inp, N):
+    xp = cp if hasattr(inp, 'device') else np
+    out = xp.zeros([inp.shape[0]//N, inp.shape[1]//N], dtype=inp.dtype)
+    ids = xp.indices([inp.shape[0]//N, inp.shape[1]//N])
+    for dx in range(N):
+        for dy in range(N):
+            out += inp[N*ids[0]+dy, N*ids[1]+dx]
+    return out
 
 
 def Gaussian2DTilted(amp=1.0, x_0=0.0, y_0=0.0, s_x=1.0, s_y=1.0, ang=0.0):
