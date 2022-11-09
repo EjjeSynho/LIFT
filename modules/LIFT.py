@@ -52,52 +52,51 @@ class LIFT:
                 self.tel.object = cp.array(self.tel.object, cp.float32)
 
         initial_OPD = self.modeBasis.wavefrontFromModes(self.tel, coefs) + self.astigmatism_OPD
+        
         H = []
+        if not numerical:
+            for point in self.tel.src.spectrum:
+                wavelength = point['wavelength']
 
-        #if not numerical:
-        for point in self.tel.src.spectrum:
-            wavelength = point['wavelength']
+                initial_amplitude = xp.sqrt(self.tel.flux(point['flux'], self.tel.det.sampling_time)) * self.tel.pupil
+                k = 2*xp.pi/wavelength
 
-            initial_amplitude = xp.sqrt(self.tel.flux(point['flux'], self.tel.det.sampling_time)) * self.tel.pupil
-            k = 2*xp.pi/wavelength
+                initial_phase = k * initial_OPD
+                Pd = xp.conj( self.tel.PropagateField(initial_amplitude, initial_phase, wavelength, return_intensity=False) )
+                
+                H_spectral = []
+                for i in range(coefs.shape[0]):
+                    if coefs[i].item() is not None and not xp.isnan(coefs[i]).item():
+                        buf = self.tel.PropagateField(self.modeBasis.modesFullRes[:,:,i]*initial_amplitude, initial_phase, wavelength, return_intensity=False)
+                        derivative = 2*binning((xp.real(1j*buf*Pd)), self.tel.oversampling) * k
 
-            initial_phase = k * initial_OPD
-            Pd = xp.conj( self.tel.PropagateField(initial_amplitude, initial_phase, wavelength, return_intensity=False) )
-            
-            H_spectral = []
-            for i in range(coefs.shape[0]):
-                if coefs[i].item() is not None and not xp.isnan(coefs[i]).item():
-                    buf = self.tel.PropagateField(self.modeBasis.modesFullRes[:,:,i]*initial_amplitude, initial_phase, wavelength, return_intensity=False)
-                    #derivative = xp.sqrt( binning( (2*xp.real(1j*buf*Pd))**2 , self.tel.oversampling) ) * k
-                    derivative = 2*binning((xp.real(1j*buf*Pd)), self.tel.oversampling) * k
+                        if self.tel.object is not None:
+                            derivative = xg.convolve2d(derivative, self.tel.object, boundary='symm', mode='same') / self.tel.object.sum()
 
-                    if self.tel.object is not None:
-                        derivative = xg.convolve2d(derivative, self.tel.object, boundary='symm', mode='same') / self.tel.object.sum()
-
-                    H_spectral.append(derivative.flatten())   
-            H.append(xp.vstack(H_spectral).T)
-
-        '''       
+                        H_spectral.append(derivative.flatten())   
+                H.append(xp.vstack(H_spectral).T)
+        
         else:
             delta = 1e-9 # [nm]
             for point in self.tel.src.spectrum:
                 H_spectral = []
                 for i in range(coefs.shape[0]):
                     if (coefs[i] is not None) and (not np.isnan(coefs[i])):       
-                        self.tel.src.OPD =  (self.modeBasis.modesFullRes[:,:,i] * delta) + initial_OPD
+                        self.tel.src.OPD = (self.modeBasis.modesFullRes[:,:,i] * delta) + initial_OPD
                         tmp1 = self.tel.ComputePSF()                
 
                         self.tel.src.OPD = -(self.modeBasis.modesFullRes[:,:,i] * delta) + initial_OPD
                         tmp2 = self.tel.ComputePSF()
-                            
-                        derivative = (tmp1 - tmp2) / 2 / delta
+
+
+                        derivative = (tmp1-tmp2) / 2 / delta
                             
                         if self.tel.object is not None:
-                            derivative = sg.convolve2d(derivative, self.tel.object, boundary='symm', mode='same')
-                        H_spectral.append( derivative.reshape([tmp2.shape[0]*tmp2.shape[1]]) )
-                H.append(np.dstack(H_spectral)[0])
-        '''
-
+                            derivative = xg.convolve2d(derivative, self.tel.object, boundary='symm', mode='same')
+                        
+                        H_spectral.append( derivative.flatten() )
+                H.append(np.vstack(H_spectral).T)
+        
         return xp.dstack(H).sum(axis=2) # sum all spectral interaction matricies
 
 
