@@ -46,7 +46,7 @@ tel = Telescope(img_resolution        = 17,
                     pupilReflectivity = 1.0,
                     gpu_flag          = True)
 
-det = Detector(pixel_size = pixel_size,
+det = Detector(pixel_size     = pixel_size,
                 sampling_time = sampling_time,
                 samples       = num_samples,
                 RON           = 4.0, # used to generate PSF or the synthetic R_n [photons]
@@ -65,8 +65,8 @@ OPD_diversity = Z_basis.Mode(3)*diversity_shift
 
 #%%  ============================ Code in this cell is NOT must have ============================
 # Synthetic PSF
-#coefs_0 = np.array([10, -15, 200, 20, -45, 34, 21, -29, 20, 10])*1e-9 #[m]
-coefs_0 = np.array([0, 0, 200, 0, 0, 0, 0, 0, 0, 0])*1e-9 #[m]
+coefs_0 = np.array([10, -15, 200, 20, -45, 34, 21, -29, 20, 10])*1e-9 #[m]
+#coefs_0 = np.array([0, 0, 200, 0, 0, 0, 0, 0, 0, 0])*1e-9 #[m]
 
 
 def PSFfromCoefs(coefs):
@@ -82,12 +82,13 @@ def PSFfromCoefs(coefs):
 
 PSF = PSFfromCoefs(coefs_0)
 PSF_noisy_DITs, _ = tel.det.getFrame(PSF, noise=True, integrate=False)
-
-# v-------- Or initialize it synthetically. You know better :)
 R_n = PSF_noisy_DITs.var(axis=2)    # LIFT flux-weighting matrix
 PSF_0 = PSF_noisy_DITs.mean(axis=2) # input PSF
 
-R_n =  R_n * 0 + 1.0 #okay, lets assume it's just all ones for now
+#R_n =  R_n * 0 + 1.0 #okay, lets assume it's just all ones for now
+
+#from tools.misc import binning
+#PSF = binning(PSF, 4)
 
 #%%  ============================ Code in this cell is must have ============================
 estimator = LIFT(tel, Z_basis, OPD_diversity, 20)
@@ -133,7 +134,7 @@ for defocus in tqdm(def_scan):
     PSF_noisy_DITs, _ = tel.det.getFrame(PSFfromCoefs(coefs_def), noise=True, integrate=False)
     R_n = PSF_noisy_DITs.var(axis=2) 
     PSF_0 = PSF_noisy_DITs.mean(axis=2)
-    R_n =  R_n * 0 + 1.0
+    #R_n =  R_n * 0 + 1.0
 
     coefs_1, PSF_1, _ = estimator.Reconstruct(PSF_0, R_n=R_n, mode_ids=modes, optimize_norm=False)
     defocus_est.append(coefs_1[2])

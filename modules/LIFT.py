@@ -4,7 +4,7 @@ from cupy  import linalg as clg
 from scipy import linalg as lg
 from scipy import signal as sg
 from cupyx.scipy import signal as csg
-
+from tools.misc import binning
 
 class LIFT:
     def __init__(self, tel, modeBasis, astigmatism_OPD, iterations):
@@ -12,7 +12,6 @@ class LIFT:
         self.modeBasis       = modeBasis
         self.astigmatism_OPD = astigmatism_OPD
         self.iterations      = iterations
-        self.oversampling    = 1
         self.gpu             = self.tel.gpu
 
         if self.gpu:
@@ -60,20 +59,23 @@ class LIFT:
             wavelength = point['wavelength']
 
             initial_amplitude = xp.sqrt(self.tel.flux(point['flux'], self.tel.det.sampling_time)) * self.tel.pupil
+            k = 2*xp.pi/wavelength
 
-            initial_phase = 2 * xp.pi / wavelength * initial_OPD
-            Pd = xp.conj( self.tel.PropagateField(initial_amplitude, initial_phase, wavelength, return_intensity=False, oversampling=self.oversampling) )
+            initial_phase = k * initial_OPD
+            Pd = xp.conj( self.tel.PropagateField(initial_amplitude, initial_phase, wavelength, return_intensity=False) )
             
             H_spectral = []
             for i in range(coefs.shape[0]):
                 if coefs[i].item() is not None and not xp.isnan(coefs[i]).item():
-                    buf = self.tel.PropagateField(self.modeBasis.modesFullRes[:,:,i]*initial_amplitude, initial_phase, wavelength, return_intensity=False, oversampling=self.oversampling)
-                    derivative = 2*xp.real(1j*buf*Pd) * 2 * xp.pi / wavelength
+                    buf = self.tel.PropagateField(self.modeBasis.modesFullRes[:,:,i]*initial_amplitude, initial_phase, wavelength, return_intensity=False)
+                    #derivative = xp.sqrt( binning( (2*xp.real(1j*buf*Pd))**2 , self.tel.oversampling) ) * k
+                    derivative = 2*binning((xp.real(1j*buf*Pd)), self.tel.oversampling) * k
 
                     if self.tel.object is not None:
                         derivative = xg.convolve2d(derivative, self.tel.object, boundary='symm', mode='same') / self.tel.object.sum()
-                    H_spectral.append( derivative.reshape([buf.shape[0]*buf.shape[1]]) )
-            H.append(xp.dstack(H_spectral)[0])
+
+                    H_spectral.append(derivative.flatten())   
+            H.append(xp.vstack(H_spectral).T)
 
         '''       
         else:

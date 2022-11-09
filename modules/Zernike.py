@@ -48,8 +48,7 @@ class Zernike:
         # Can cast the below to "int", n,m are always *both* either even or odd
         for i in range(0, int((n-m)/2) + 1):
             R += np.array(r**(n - 2 * i) * (((-1)**(i)) *
-                            np.math.factorial(n-i)) /
-                            (np.math.factorial(i) *
+                            np.math.factorial(n-i)) / (np.math.factorial(i) *
                             np.math.factorial(int(0.5 * (n+m) - i)) *
                             np.math.factorial(int(0.5 * (n-m) - i))),
                             dtype='float')
@@ -63,7 +62,7 @@ class Zernike:
         m = int((p+k)/2.)*2 - k
 
         if m!=0:
-            if j%2==0:
+            if j % 2 == 0:
                 s=1
             else:
                 s=-1
@@ -84,8 +83,10 @@ class Zernike:
             ndarray: The Zernike mode
         """
         self.gpu = tel.gpu
-        if self.gpu: pupil = tel.pupil.get()
-        else: pupil = tel.pupil
+        if self.gpu:
+            pupil = tel.pupil.get()
+        else:
+            pupil = tel.pupil
 
         X, Y = np.where(pupil > 0)
         resolution = pupil.shape[0]
@@ -132,8 +133,7 @@ class Zernike:
 
     # Generate wavefront shape corresponding to given model coefficients and modal basis 
     def wavefrontFromModes(self, tel, coefs):
-        if self.gpu: xp = cp
-        else: xp = np
+        xp = cp if self.gpu else np
 
         if isinstance(coefs, list): coefs = xp.array(coefs).flatten()
 

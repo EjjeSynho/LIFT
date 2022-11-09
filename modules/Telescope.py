@@ -1,10 +1,11 @@
 import sys
 sys.path.insert(0, '..')
 
-from skimage.transform import resize
 import numpy as np
 import cupy as cp
-from tools.misc import bin
+import matplotlib.pyplot as plt
+from tools.misc import binning
+
 class Telescope:
     def __init__(self,
                  img_resolution,
@@ -26,6 +27,7 @@ class Telescope:
         self.det               = None
         self.tag               = 'telescope'       # a tag of the object
         self.gpu               = gpu_flag
+        self.oversampling      = 1
 
         if self.gpu:
             self.pupil = cp.array(self.pupil, dtype=cp.float32)
@@ -42,107 +44,59 @@ class Telescope:
         print(int(ident*2.4)*char)
 
 
-    def PropagateField(self, amplitude, phase, wavelength, return_intensity, oversampling=1):
+    def PropagateField(self, amplitude, phase, wavelength, return_intensity, oversampling=None):
+        xp = cp if self.gpu else np
+
         zeroPaddingFactor = self.f / self.det.pixel_size * wavelength / self.D
         resolution = self.pupil.shape[0]
-    
+        if oversampling is not None: self.oversampling = oversampling
+
         if self.img_resolution > zeroPaddingFactor*resolution:
             print('Error: image has too many pixels for this pupil sampling. Try using a pupil mask with more pixels')
             return None
 
         # If PSF is undersampled apply the integer oversampling
-        if zeroPaddingFactor * oversampling < 2:
-            oversampling = (np.ceil(2.0/zeroPaddingFactor)).astype('int')
+        if zeroPaddingFactor * self.oversampling < 2:
+            self.oversampling = (np.ceil(2.0/zeroPaddingFactor)).astype('int')
         
         # This is to ensure that PSF will be binned properly if number of pixels is odd
-        if oversampling % 2 != self.img_resolution % 2:
-            oversampling += 1
+        if self.oversampling % 2 != self.img_resolution % 2:
+            self.oversampling += 1
 
-        img_size = np.ceil(self.img_resolution*oversampling).astype('int')
-        N = np.fix(zeroPaddingFactor * oversampling * resolution).astype('int')
+        img_size = np.ceil(self.img_resolution*self.oversampling).astype('int')
+        N = np.fix(zeroPaddingFactor * self.oversampling * resolution).astype('int')
         pad_width = np.ceil((N-resolution)/2).astype('int')
 
-        if self.gpu:
-            if not hasattr(amplitude, 'device'): amplitude = cp.array(amplitude, dtype=cp.float32)
-            if not hasattr(phase, 'device'):     phase     = cp.array(phase, dtype=cp.complex64)
-            
-            supportPadded = cp.pad(amplitude * cp.exp(1j*phase), pad_width=pad_width, constant_values=0)
-            N = supportPadded.shape[0] # make sure the number of pxels is correct after the padding
+        if not hasattr(amplitude, 'device'): amplitude = xp.array(amplitude, dtype=cp.float32)
+        if not hasattr(phase, 'device'):     phase     = xp.array(phase, dtype=cp.complex64)
+        
+        #supportPadded = cp.pad(amplitude * cp.exp(1j*phase), pad_width=pad_width, constant_values=0)
+        supportPadded = xp.pad(amplitude * xp.exp(1j*phase), pad_width=((pad_width,pad_width),(pad_width,pad_width)), constant_values=0)
+        N = supportPadded.shape[0] # make sure the number of pxels is correct after the padding
 
-            # PSF computation
-            [xx,yy] = cp.meshgrid( cp.linspace(0,N-1,N), cp.linspace(0,N-1,N), copy=False )    
-            center_aligner = cp.exp(-1j*cp.pi/N * (xx+yy) * (1-self.img_resolution%2)).astype(cp.complex64)
-            #                                                        ^--- this is to account odd/even number of pixels
-            # Propagate with Fourier shifting
-            PSF = cp.fft.fftshift(1/N * cp.fft.fft2(cp.fft.ifftshift(supportPadded*center_aligner)))
+        # PSF computation
+        [xx,yy] = xp.meshgrid( xp.linspace(0,N-1,N), xp.linspace(0,N-1,N), copy=False )    
+        center_aligner = xp.exp(-1j*xp.pi/N * (xx+yy) * (1-self.img_resolution%2)).astype(xp.complex64)
+        #                                                        ^--- this is to account odd/even number of pixels
+        # Propagate with Fourier shifting
+        EMF = xp.fft.fftshift(1/N * xp.fft.fft2(xp.fft.ifftshift(supportPadded*center_aligner)))
 
-            # Again, this is to properly crop a PSF with the odd/even number of pixels
-            if N % 2 == img_size % 2:
-                shift_pix = 0
-            else:
-                if N % 2 == 0: shift_pix = 1
-                else: shift_pix = -1
-
-            ids = np.array([np.ceil(N/2) - img_size//2 + (1-N%2)-1, np.ceil(N/2)+ img_size//2 + shift_pix]).astype('uint')
-            #PSF = cp.asnumpy( PSF[ids[0]:ids[1], ids[0]:ids[1]] ) # transfer data back to RAM from VRAM
-            PSF = PSF[ids[0]:ids[1], ids[0]:ids[1]] # transfer data back to RAM from VRAM
-
+        # Again, this is to properly crop a PSF with the odd/even number of pixels
+        if N % 2 == img_size % 2:
+            shift_pix = 0
         else:
-            supportPadded = np.pad(amplitude * np.exp(1j*phase), pad_width=((pad_width,pad_width),(pad_width,pad_width)), constant_values=0)
-            N = supportPadded.shape[0] # make sure the number of pxels is correct after the padding
+            if N % 2 == 0: shift_pix = 1
+            else: shift_pix = -1
 
-            # PSF computation
-            [xx,yy] = np.meshgrid( np.linspace(0,N-1,N), np.linspace(0,N-1,N) )        
-            center_aligner = np.exp(-1j*np.pi/N * (xx+yy) * (1-self.img_resolution%2))
-            #                                                        ^--- this is to account odd/even number of pixels
-
-            # Propagate with shifting the Fourier spectrum
-            PSF = np.fft.fftshift(1/N * np.fft.fft2(np.fft.ifftshift(supportPadded*center_aligner)))
-
-            if N % 2 == img_size % 2:
-                shift_pix = 0
-            else:
-                if N % 2 == 0: shift_pix = 1
-                else: shift_pix = -1
-
-            ids = np.array([np.ceil(N/2) - img_size//2+(1-N%2)-1, np.ceil(N/2) + img_size//2+shift_pix]).astype('uint')
-            PSF = PSF[ids[0]:ids[1], ids[0]:ids[1]]
-
-        if oversampling > 1:
-            PSF = bin(PSF, oversampling)
+        # Support only rectangular PSFs
+        ids = xp.array([np.ceil(N/2) - img_size//2+(1-N%2)-1, np.ceil(N/2) + img_size//2+shift_pix])
+        EMF = EMF[ids[0]:ids[1], ids[0]:ids[1]]
 
         if return_intensity:
-            if self.gpu: PSF = cp.abs(PSF)**2
-            else: PSF = np.abs(PSF)**2
-        return PSF
+            return binning(xp.abs(EMF)**2, self.oversampling)
 
-        # Take oversampling into the account
-        '''        
-        if oversampling > 1:
-            if return_intensity:
-                PSF = np.abs(PSF)**2
-                energy_before = np.sum( np.abs(PSF)**2 )
-                PSF = resize(PSF, (self.img_resolution, self.img_resolution), anti_aliasing=True)
-                energy_after = np.sum( np.abs(PSF)**2 )
-                PSF *= (energy_before/energy_after) # to fix distribution of energy in pixels
-            else:
-                energy_before = np.sum( np.abs(PSF)**2 )
-                Re = resize(np.real(PSF), (self.img_resolution, self.img_resolution), anti_aliasing=True)
-                Im = resize(np.imag(PSF), (self.img_resolution, self.img_resolution), anti_aliasing=True)
-                PSF = Re + 1j*Im
-                energy_after = np.sum( np.abs(PSF)**2 )
-                PSF *= (energy_before/energy_after) # to fix distribution of energy in pixels
-                
+        return EMF # in this case, raw electromagnetic field is returned. It can't be simpli binned
 
-        else:
-            if return_intensity:
-                PSF = np.abs(PSF)**2
-
-        if self.gpu:
-            return cp.array(PSF)
-        else:
-            return PSF
-        '''
 
     def ComputePSF(self, intensity=True, polychrome=False, oversampling=1):
         xp = cp if self.gpu else np
@@ -166,17 +120,6 @@ class Telescope:
                 pinned_mempool.free_all_blocks() # clear GPU memory
 
         PSF_chromatic = xp.dstack(PSF_chromatic)
-
-        #if intensity:
-        #    if polychrome:
-        #        return PSF_chromatic
-        #    else:
-        #        return PSF_chromatic.sum(axis=2)
-        #else:
-        #    if PSF_chromatic.shape[2] == 1:
-        #        return PSF_chromatic[:,:,0]
-        #    else:
-        #        return PSF_chromatic
 
         if intensity:
             if not polychrome: return PSF_chromatic.sum(axis=2)

@@ -1,16 +1,13 @@
 import numpy as np
 import cupy as cp
-
+import matplotlib.pyplot as plt
 
 # To make this function work, one must ensure that size of inp can be divided by N
-def bin(inp, N):
+def binning(inp, N):
+    if N == 1: return inp
     xp = cp if hasattr(inp, 'device') else np
-    out = xp.zeros([inp.shape[0]//N, inp.shape[1]//N], dtype=inp.dtype)
-    ids = xp.indices([inp.shape[0]//N, inp.shape[1]//N])
-    for dx in range(N):
-        for dy in range(N):
-            out += inp[N*ids[0]+dy, N*ids[1]+dx]
-    return out
+    out = xp.dstack(xp.split(xp.dstack(xp.split(inp, inp.shape[0]//N, axis=0)), inp.shape[1]//N, axis=1))
+    return out.sum(axis=(0,1)).reshape([inp.shape[0]//N, inp.shape[1]//N])
 
 
 def Gaussian2DTilted(amp=1.0, x_0=0.0, y_0=0.0, s_x=1.0, s_y=1.0, ang=0.0):
