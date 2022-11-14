@@ -4,7 +4,13 @@
 # Commom modules
 import matplotlib.pyplot as plt
 import numpy as np
-import cupy as cp
+
+try:
+    import cupy as cp
+except ImportError or ModuleNotFoundError:
+    print('CuPy is not found, using NumPy backend...')
+    cp = np
+
 from astropy.io import fits
 from skimage.transform import resize
 import skimage.measure
