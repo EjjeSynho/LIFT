@@ -1,6 +1,10 @@
 import numpy as np
-import cupy as cp
-import matplotlib.pyplot as plt
+try:
+    import cupy as cp
+except ImportError or ModuleNotFoundError:
+    print('CuPy is not found, using NumPy backend...')
+    cp = np
+
 
 # To make this function work, one must ensure that size of inp can be divided by N
 def binning(inp, N):
