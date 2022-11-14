@@ -1,9 +1,19 @@
 import numpy as np
-import cupy as cp
-from cupy  import linalg as clg
 from scipy import linalg as lg
 from scipy import signal as sg
-from cupyx.scipy import signal as csg
+
+try:
+    import cupy as cp
+    from cupy  import linalg as clg
+    from cupyx.scipy import signal as csg
+
+except ImportError or ModuleNotFoundError:
+    print('CuPy is not found, using NumPy backend...')
+    cp  = np
+    csg = sg
+    clg = lg
+
+
 from tools.misc import binning
 
 class LIFT:

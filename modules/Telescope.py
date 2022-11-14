@@ -2,8 +2,14 @@ import sys
 sys.path.insert(0, '..')
 
 import numpy as np
-import cupy as cp
-import matplotlib.pyplot as plt
+
+import sys
+try:
+    import cupy as cp
+except ImportError or ModuleNotFoundError:
+    print('CuPy is not found, using NumPy backend...')
+    cp = np
+
 from tools.misc import binning
 
 class Telescope:
@@ -89,7 +95,7 @@ class Telescope:
             else: shift_pix = -1
 
         # Support only rectangular PSFs
-        ids = xp.array([np.ceil(N/2) - img_size//2+(1-N%2)-1, np.ceil(N/2) + img_size//2+shift_pix])
+        ids = xp.array([np.ceil(N/2) - img_size//2+(1-N%2)-1, np.ceil(N/2) + img_size//2+shift_pix]).astype(xp.int32)
         EMF = EMF[ids[0]:ids[1], ids[0]:ids[1]]
 
         if return_intensity:

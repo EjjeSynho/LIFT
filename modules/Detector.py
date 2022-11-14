@@ -1,9 +1,13 @@
 import numpy as np
-from numpy.core.fromnumeric import shape
 from numpy.random import Generator, PCG64
-import matplotlib.pyplot as plt
 from scipy import signal as sg
-import cupy as cp
+
+try:
+    import cupy as cp
+except ImportError or ModuleNotFoundError:
+    print('CuPy is not found, using NumPy backend...')
+    cp = np
+
 
 class Detector:
     def __init__(self, pixel_size, sampling_time, samples=1, RON=0, QE=1):

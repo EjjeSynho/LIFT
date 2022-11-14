@@ -6,7 +6,6 @@ Created on Wed Feb 19 10:32:15 2020
 @author: cheritie
 """
 import numpy as np
-import inspect
 
 
 class Source:   #   v-- is a list of turples, each turple is: (band, magnitude)

@@ -1,19 +1,11 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Feb 19 10:31:33 2020
-
-@author: cheritie
-"""
-
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Feb 19 10:29:12 2020
-
-@author: cheritie
-"""
-
 import numpy as np
-import cupy as cp
+
+try:
+    import cupy as cp
+except ImportError or ModuleNotFoundError:
+    print('CuPy is not found, using NumPy backend...')
+    cp = np
+
 
 class Zernike:
     def __init__(self, modes_num=1):
