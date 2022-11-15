@@ -4,25 +4,28 @@ from scipy import signal as sg
 
 try:
     import cupy as cp
-    from cupy  import linalg as clg
+    from cupy import linalg as clg
     from cupyx.scipy import signal as csg
+    global_gpu_flag = True
 
 except ImportError or ModuleNotFoundError:
     print('CuPy is not found, using NumPy backend...')
     cp  = np
     csg = sg
     clg = lg
+    global_gpu_flag = False
 
 
 from tools.misc import binning
 
 class LIFT:
     def __init__(self, tel, modeBasis, astigmatism_OPD, iterations):
+        global global_gpu_flag
         self.tel             = tel
         self.modeBasis       = modeBasis
         self.astigmatism_OPD = astigmatism_OPD
         self.iterations      = iterations
-        self.gpu             = self.tel.gpu
+        self.gpu             = self.tel.gpu and global_gpu_flag
 
         if self.gpu:
             self.astigmatism_OPD = cp.array(self.astigmatism_OPD, dtype=cp.float32)

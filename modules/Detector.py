@@ -19,9 +19,6 @@ class Detector:
         self.tag           = 'detector'        
         self.object        = None
 
-        self.GPU           = False
-        self.object_GPU    = None
-        self.PSF_GPU       = None
 
     def getFrame(self, PSF_inp, noise=True, integrate=True):
 

@@ -2,13 +2,16 @@ import numpy as np
 
 try:
     import cupy as cp
+    global_gpu_flag = True
 except ImportError or ModuleNotFoundError:
     print('CuPy is not found, using NumPy backend...')
     cp = np
+    global_gpu_flag = False
 
 
 class Zernike:
     def __init__(self, modes_num=1):
+        global global_gpu_flag
         self.nModes = modes_num
         self.modesFullRes = None
         
@@ -21,7 +24,8 @@ class Zernike:
             'Secondary trefoil horiz', 'Secondary trefoil vert',
             'Pentafoil horiz', 'Pentafoil vert'
         ]
-        self.gpu = False
+        self.gpu = global_gpu_flag
+
 
     def zernikeRadialFunc(self, n, m, r):
         """
@@ -74,11 +78,9 @@ class Zernike:
          Returns:
             ndarray: The Zernike mode
         """
-        self.gpu = tel.gpu
-        if self.gpu:
-            pupil = tel.pupil.get()
-        else:
-            pupil = tel.pupil
+ 
+        self.gpu = self.gpu and tel.gpu
+        pupil = tel.pupil.get() if self.gpu else tel.pupil
 
         X, Y = np.where(pupil > 0)
         resolution = pupil.shape[0]

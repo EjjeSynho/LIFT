@@ -6,9 +6,11 @@ import numpy as np
 import sys
 try:
     import cupy as cp
+    global_gpu_flag = True
 except ImportError or ModuleNotFoundError:
     print('CuPy is not found, using NumPy backend...')
     cp = np
+    global_gpu_flag = False
 
 from tools.misc import binning
 
@@ -20,7 +22,8 @@ class Telescope:
                  focalLength,
                  pupilReflectivity = 1.0,
                  gpu_flag = False):
-     
+
+        global global_gpu_flag
         self.pupil = pupil
         assert self.pupil.shape[0] == self.pupil.shape[1], "Error: pupil mask must be a square array!"
 
@@ -32,7 +35,7 @@ class Telescope:
         self.src               = None              # a source object associated to the telescope object
         self.det               = None
         self.tag               = 'telescope'       # a tag of the object
-        self.gpu               = gpu_flag
+        self.gpu               = gpu_flag and global_gpu_flag
         self.oversampling      = 1
 
         if self.gpu:

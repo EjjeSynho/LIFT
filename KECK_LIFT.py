@@ -71,7 +71,7 @@ OPD_diversity = Z_basis.Mode(3)*diversity_shift
 
 #%%  ============================ Code in this cell is NOT must have ============================
 # Synthetic PSF
-coefs_0 = np.array([10, -15, 200, 20, -45, 34, 21, -29, 20, 10])*1e-9 #[m]
+coefs_0 = np.array([10, -150, 200, 20, -45, 34, 51, -29, 20, 10])*1e-9 #[m]
 #coefs_0 = np.array([0, 0, 200, 0, 0, 0, 0, 0, 0, 0])*1e-9 #[m]
 
 
@@ -125,7 +125,7 @@ print('WFE: ', np.round(np.std(WF_0-WF_1)).astype('int'), '[nm]')
 plt.imshow(np.hstack([PSF_0, PSF_1, np.abs(PSF_0-PSF_1)]))
 plt.show()
 
-print('Coefficients difference: ', (coefs_0[:5]-coefs_1)*1e9 )
+print('Coefficients difference [nm]: ', *np.round((coefs_0[:5]-coefs_1)*1e9).astype('int').tolist() )
 
 #%% ------- Linearity range scanning -------
 def_scan = np.arange(-100,101,10)*1e-9
