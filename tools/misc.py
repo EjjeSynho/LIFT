@@ -11,7 +11,7 @@ def binning(inp, N):
     if N == 1: return inp
     xp = cp if hasattr(inp, 'device') else np
     out = xp.dstack(xp.split(xp.dstack(xp.split(inp, inp.shape[0]//N, axis=0)), inp.shape[1]//N, axis=1))
-    return out.sum(axis=(0,1)).reshape([inp.shape[0]//N, inp.shape[1]//N])
+    return out.sum(axis=(0,1)).reshape([inp.shape[0]//N, inp.shape[1]//N]).T
 
 
 def Gaussian2DTilted(amp=1.0, x_0=0.0, y_0=0.0, s_x=1.0, s_y=1.0, ang=0.0):

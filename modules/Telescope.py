@@ -14,6 +14,7 @@ except ImportError or ModuleNotFoundError:
 
 from tools.misc import binning
 
+
 class Telescope:
     def __init__(self,
                  img_resolution,
@@ -104,7 +105,7 @@ class Telescope:
         if return_intensity:
             return binning(xp.abs(EMF)**2, self.oversampling)
 
-        return EMF # in this case, raw electromagnetic field is returned. It can't be simpli binned
+        return EMF # in this case, raw electromagnetic field is returned. It can't be simply binned
 
 
     def ComputePSF(self, intensity=True, polychrome=False, oversampling=1):
