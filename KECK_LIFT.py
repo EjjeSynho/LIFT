@@ -24,14 +24,18 @@ from modules.Zernike   import Zernike
 from modules.LIFT      import LIFT
 
 # Local auxillary modules
-from tools.misc import magnitudeFromPSF, TruePhotonsFromMag
+from tools.misc import draw_PSF_difference
 
-with fits.open('C:\\Users\\akuznets\\Data\\KECK\\pupil_largehex_4096_ROT008.fits') as hdul:
-    pupil_big = hdul[0].data.astype('float')
+#with fits.open('C:\\Users\\akuznets\\Data\\KECK\\pupil_largehex_4096_ROT008.fits') as hdul:
+#    pupil_big = hdul[0].data.astype('float')
+#pupil_small = resize(pupil_big, (64, 64), anti_aliasing=False) # mean pooling, spiders are lost
+#pupil_small[np.where(pupil_small<1.0)] = 0.0
+##pupil_small = skimage.measure.block_reduce(pupil_big, (64,64), np.min) # min pooling to preserve spiders
 
-pupil_small = resize(pupil_big, (64, 64), anti_aliasing=False) # mean pooling, spiders are lost
-#pupil_small = skimage.measure.block_reduce(pupil_big, (64,64), np.min) # min pooling to preserve spiders
+with fits.open('C:\\Users\\akuznets\\Data\\KECK\\keckPupil64x64pixForCrossComparison.fits') as hdul:
+    pupil_small = hdul[0].data.astype('float')
 
+#plt.imshow(pupil_small)
 
 #%%  ============================ Code in this cell is must have ============================
 D = 10.0 # [m]
@@ -55,11 +59,12 @@ tel = Telescope(img_resolution        = 17,
 det = Detector(pixel_size     = pixel_size,
                 sampling_time = sampling_time,
                 samples       = num_samples,
-                RON           = 4.0, # used to generate PSF or the synthetic R_n [photons]
-                QE            = 1.0) # not used
+                RON           = 5.0, # used to generate PSF or the synthetic R_n [photons]
+                QE            = 0.7) # not used
+
 det.object = None
 det * tel
-ngs_poly = Source([('H', 0.0)]) # Initialize a target of H_mag=10
+ngs_poly = Source([('H', 19.0)]) # Initialize a target of H_mag=10
 ngs_poly * tel # attach the source to the telescope
 
 # Initialize modal basis
@@ -74,12 +79,11 @@ OPD_diversity = Z_basis.Mode(3)*diversity_shift
 coefs_0 = np.array([10, -150, 200, 20, -45, 34, 51, -29, 20, 10])*1e-9 #[m]
 #coefs_0 = np.array([0, 0, 200, 0, 0, 0, 0, 0, 0, 0])*1e-9 #[m]
 
-
 def PSFfromCoefs(coefs):
     if hasattr(Z_basis.modesFullRes, 'device'):
-        wavefront = Z_basis.modesFullRes.get() @ coefs + OPD_diversity.get()
+        wavefront = Z_basis.modesFullRes.get() @ coefs + OPD_diversity.get() * tel.pupil.get()
     else:
-        wavefront = Z_basis.modesFullRes @ coefs + OPD_diversity
+        wavefront = Z_basis.modesFullRes @ coefs + OPD_diversity * tel.pupil
         
     tel.src.OPD = wavefront
     PSF = tel.ComputePSF()
@@ -91,20 +95,21 @@ PSF_noisy_DITs, _ = tel.det.getFrame(PSF, noise=True, integrate=False)
 R_n = PSF_noisy_DITs.var(axis=2)    # LIFT flux-weighting matrix
 PSF_0 = PSF_noisy_DITs.mean(axis=2) # input PSF
 
-#R_n =  R_n * 0 + 1.0 #okay, lets assume it's just all ones for now
-
-#from tools.misc import binning
-#PSF = binning(PSF, 4)
 
 #%%  ============================ Code in this cell is must have ============================
 estimator = LIFT(tel, Z_basis, OPD_diversity, 20)
 
+# Increase the flux artificially to test the normalization optimization inside the LIFT
+PSF_0 *= 4
+R_n *= 4
+
 #modes = [0,1,2,3,4,5,6,7,8,9]
 modes = [0,1,2,3,4]
 #           Flux optimization is something to be reconsidered --------------V
-coefs_1, PSF_1, _ = estimator.Reconstruct(PSF_0, R_n=R_n, mode_ids=modes, optimize_norm=False)
+#coefs_1, PSF_1, _ = estimator.Reconstruct(PSF_0, R_n=R_n, mode_ids=modes, optimize_norm='sum')
+coefs_1, PSF_1, _ = estimator.Reconstruct(PSF_0, R_n='model', mode_ids=modes, optimize_norm='sum')
 
-#%%  ============================ Code in this cell is NOT must have ============================
+#%  ============================ Code in this cell is NOT must have ============================
 def GenerateWFE(coefs):
     if hasattr(Z_basis.modesFullRes, 'device'):
         Wf_aberrated = (Z_basis.modesFullRes[:,:,modes]*cp.array(coefs[modes])).sum(axis=2) # [m]
@@ -140,7 +145,6 @@ for defocus in tqdm(def_scan):
     PSF_noisy_DITs, _ = tel.det.getFrame(PSFfromCoefs(coefs_def), noise=True, integrate=False)
     R_n = PSF_noisy_DITs.var(axis=2) 
     PSF_0 = PSF_noisy_DITs.mean(axis=2)
-    #R_n =  R_n * 0 + 1.0
 
     coefs_1, PSF_1, _ = estimator.Reconstruct(PSF_0, R_n=R_n, mode_ids=modes, optimize_norm=False)
     defocus_est.append(coefs_1[2])

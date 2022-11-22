@@ -13,7 +13,7 @@ class Detector:
     def __init__(self, pixel_size, sampling_time, samples=1, RON=0, QE=1):
         self.QE            = QE #TODO: use QE?
         self.pixel_size    = pixel_size
-        self.readoutNoise  = RON
+        self.readoutNoise  = RON # it's variance
         self.sampling_time = sampling_time
         self.samples       = samples   
         self.tag           = 'detector'        
@@ -22,10 +22,7 @@ class Detector:
 
     def getFrame(self, PSF_inp, noise=True, integrate=True):
 
-        if hasattr(PSF_inp, 'device'):
-            PSF = cp.asnumpy(PSF_inp)
-        else:
-            PSF = np.copy(PSF_inp)
+        PSF = cp.asnumpy(PSF_inp) if hasattr(PSF_inp, 'device') else np.copy(PSF_inp)
 
         if self.object is not None:
             PSF = sg.convolve2d(PSF, self.object, boundary='symm', mode='same') / self.object.sum()

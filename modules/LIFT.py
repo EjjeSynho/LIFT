@@ -159,10 +159,16 @@ class LIFT:
             PSF_buf = np.copy(PSF)
             inv_R_n_buf = np.copy(inv_R_n)
 
-            if optimize_norm:
-                flux_scale = PSF_cap.max() / PSF.max()
+            if optimize_norm is not None:
+                if optimize_norm == 'max':
+                    flux_scale = PSF_cap.max() / PSF.max()
+                elif optimize_norm == 'sum':
+                    flux_scale = PSF_cap.sum() / PSF.sum()
+                else: flux_scale = 1.0
+
                 PSF_buf *= flux_scale
-                inv_R_n_buf = inv_R_n_buf / flux_scale**2 #because it's a variance
+                inv_R_n_buf = inv_R_n_buf / flux_scale
+
 
             dI = (PSF_buf - PSF_cap).flatten().astype('float64')
 
@@ -209,9 +215,12 @@ class LIFT:
             if self.tel.object is not None:
                 PSF_cap = sg.convolve2d(PSF_cap, self.tel.object, boundary='symm', mode='same') / self.tel.object.sum()
 
-        if optimize_norm:
-            PSF_cap = PSF_cap * PSF.max() / PSF_cap.max()
-
+            if optimize_norm is not None:
+                if optimize_norm == 'max':
+                    PSF_cap = PSF_cap * PSF.max() / PSF_cap.max()
+                elif optimize_norm == 'sum':
+                    PSF_cap = PSF_cap * PSF.sum() / PSF_cap.sum()
+                else: pass
         history = { #save intermediate data every iteration
                 'P_ML' : np.dstack(P_MLs),
                 'H'    : np.dstack(Hs),
@@ -258,22 +267,29 @@ class LIFT:
 
         A_ests.append(cp.copy(A_est)) # saving coefficients history
         PSF_cap = cp.array(PSF_0, dtype=cp.float32)      # saving PSF history
-        inv_R_n = 1.0 / cp.clip(R_n.reshape(R_n.shape[0]*R_n.shape[1]), a_min=1e-6, a_max=R_n.max())
-        
-        PSF_buf = cp.array(PSF, dtype=cp.float32) 
-        inv_R_n_buf = cp.array(inv_R_n, dtype=cp.float32) 
+        inv_R_n = 1.0 / cp.clip(R_n.reshape(R_n.shape[0]*R_n.shape[1]), a_min=1e-6, a_max=R_n.max())  
 
         criterion  = lambda i: np.abs(C[i]-C[i-1]) / C[i]
         coefs_norm = lambda v: cp.linalg.norm(v, ord=2)
 
-        norm = 1.0 #normalizes flux
-
         for i in range(self.iterations):
-            if optimize_norm: norm = PSF_cap.max() / PSF.max()
 
-            dI = (PSF_buf*norm-PSF_cap).flatten()
+            PSF_buf = cp.array(PSF, dtype=cp.float32) 
+            inv_R_n_buf = cp.array(inv_R_n, dtype=cp.float32) 
+
+            if optimize_norm is not None:
+                if optimize_norm == 'max':
+                    flux_scale = PSF_cap.max() / PSF.max()
+                elif optimize_norm == 'sum':
+                    flux_scale = PSF_cap.sum() / PSF.sum()
+                else: flux_scale = 1.0
+
+                PSF_buf *= flux_scale
+                inv_R_n_buf = inv_R_n_buf / flux_scale
+                
+            dI = (PSF_buf-PSF_cap).flatten()
             # Check convergence
-            C.append( cp.dot(dI * inv_R_n_buf/norm, dI) )
+            C.append( cp.dot(dI * inv_R_n_buf, dI) )
             
             if i > 0 and (criterion(i) < 1e-6 or coefs_norm(A_ests[i]-A_ests[i-1]) < 1e-12):
                 print('Criterion', criterion(i), 'is reached at iter.', i)
@@ -288,7 +304,7 @@ class LIFT:
             H = self.generateLIFTinteractionMatrices(coefs=self.unpack(A_est, mode_ids))                               
 
             # Maximum likelyhood estimation
-            P_ML = clg.pinv(H.T * (inv_R_n_buf/norm) @ H) @ H.T * (inv_R_n_buf/norm)
+            P_ML = clg.pinv(H.T * inv_R_n_buf @ H) @ H.T * inv_R_n_buf
             d_A = P_ML @ dI
             A_est += d_A
             
@@ -313,8 +329,11 @@ class LIFT:
             if self.tel.object is not None:
                 PSF_cap = csg.convolve2d(PSF_cap, self.tel.object, boundary='symm', mode='same') / self.tel.object.sum()
 
-        if optimize_norm:
+        if optimize_norm == 'max':
             PSF_cap = PSF_cap * PSF.max() / PSF_cap.max()
+        elif optimize_norm == 'sum':
+            PSF_cap = PSF_cap * PSF.sum() / PSF_cap.sum()
+        else: pass
 
         history = { #save intermediate data every iteration
                 'P_ML' : cp.asnumpy( cp.dstack(P_MLs) ),
@@ -325,7 +344,48 @@ class LIFT:
         return cp.asnumpy(self.unpack(A_est, mode_ids)), cp.asnumpy(PSF_cap), history
 
 
-    def Reconstruct(self, PSF, R_n, mode_ids, A_0=None, A_ref=None, verbous=False, optimize_norm=False):
+    def Reconstruct(self, PSF, R_n, mode_ids, A_0=None, A_ref=None, verbous=False, optimize_norm='sum'):
+        """
+        Function to reconstruct modal coefficients from the input PSF image using LIFT
+
+        Parameters:
+            PSF (ndarray):                   2-d array of the input PSF image to reconstruct.
+
+            R_n (ndarray or string or None): The pixel weighting matrix for LIFT. It can be passed to the function.
+                                             from outside, modeled ('model'), or assumed to be unitary ('None').
+            mode_ids (ndarray or list):      IDs of the modal coefficients to be reconstructed
+            A_0 (ndarray):                   initial assumtion for the coefficient values. In some sense, it acts as an additional 
+                                             phase diversity on top of the main phase diversity which is passed when class is initialized.
+
+            A_ref (ndarray):                 Reference coefficients to compare the reconstruction with. Useful only when ground-truth (A_ref) is known.
+
+            verbous (bool):                  Set 'True' to print the intermediate reconstruction results.
+
+            optimize_norm (string or None):  Recomputes the flux of the recontructed PSF iteratively. If 'None', the flux is not recomputed, 
+                                             this is recommended only if the target brightness is precisely known. In mosyt of the case it is 
+                                             recommended to switch it on. When 'sum', the reconstructed PSF is normalized to the sum of the pixels 
+                                             of the input PSF. If 'max', then the reconstructed PSF is normalized to the maximal value of the input PSF.
+        """
+
+        xp = cp if self.gpu else np
+
+        if R_n == 'model':
+            self.tel.src.OPD = self.tel.pupil
+            PSF_model = self.tel.ComputePSF()
+
+            if optimize_norm is not None:
+                if optimize_norm == 'sum':
+                    PSF_model =  PSF_model / PSF_model.sum() * PSF.sum()
+                elif optimize_norm == 'max':
+                    PSF_model =  PSF_model / PSF_model.max() * PSF.max()
+                else: pass
+                
+            R_n = PSF_model + self.tel.det.readoutNoise
+
+        elif R_n is None:
+            R_n = xp.ones_like(PSF)
+        else: pass                            
+
         if self.gpu:
             return self.ReconstructGPU(PSF, R_n, mode_ids, A_0, A_ref, verbous, optimize_norm)
         else:

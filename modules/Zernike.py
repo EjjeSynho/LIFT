@@ -1,5 +1,7 @@
-import numpy as np
+import sys
+sys.path.insert(0, '..')
 
+import numpy as np
 try:
     import cupy as cp
     global_gpu_flag = True
@@ -7,6 +9,8 @@ except ImportError or ModuleNotFoundError:
     print('CuPy is not found, using NumPy backend...')
     cp = np
     global_gpu_flag = False
+
+from tools.misc import mask_circle
 
 
 class Zernike:
@@ -58,40 +62,37 @@ class Zernike:
         m = int((p+k)/2.)*2 - k
 
         if m!=0:
-            if j % 2 == 0:
-                s=1
-            else:
-                s=-1
+            if j % 2 == 0:  s=1
+            else:  s=-1
             m *= s
 
         return [n, m]
 
 
-    def computeZernike(self, tel):
+    def computeZernike(self, tel, normalize_unit=False):
         """
-         Creates the Zernike polynomial with radial index, n, and azimuthal index, m.
-    
-         Args:
-            n (int): The radial order of the zernike mode
-            m (int): The azimuthal order of the zernike mode
-            N (int): The diameter of the zernike more in pixels
-         Returns:
-            ndarray: The Zernike mode
+        Function to calculate the Zernike modal basis
+
+        Parameters:
+            tel (Telescope): A telescope object, needed mostly to extract pupil data 
+            normalize_unit (bool): Sets the regime for normalization of Zernike modes
+                                   it's either the telescope's pupil or a unit circle  
         """
  
+        resolution = tel.pupil.shape[0]
+
         self.gpu = self.gpu and tel.gpu
-        pupil = tel.pupil.get() if self.gpu else tel.pupil
+        if normalize_unit:
+            pupil = mask_circle(N=resolution, r=resolution/2)
+        else:
+            pupil = tel.pupil.get() if self.gpu else tel.pupil
 
-        X, Y = np.where(pupil > 0)
-        resolution = pupil.shape[0]
-
-        X = ( X-(resolution + resolution%2-1)/2 ) / resolution * tel.D
-        Y = ( Y-(resolution + resolution%2-1)/2 ) / resolution * tel.D
-        #                           ^- to properly allign coordinates relative to the (0,0) for even/odd telescope resolutions
+        X, Y = np.where(pupil == 1)
+        X = (X-resolution//2+0.5*(1-resolution%2)) / resolution
+        Y = (Y-resolution//2+0.5*(1-resolution%2)) / resolution
         R = np.sqrt(X**2 + Y**2)
-        R = R / R.max()
         theta = np.arctan2(Y, X)
-        #self.modes = np.zeros( [pupil.sum().astype('int'), self.nModes] )
+
         self.modesFullRes = np.zeros([resolution**2, self.nModes])
 
         for i in range(1, self.nModes+1):
@@ -108,11 +109,11 @@ class Zernike:
             Z -= Z.mean()
             Z /= np.std(Z)
 
-            #self.modes[:, i-1] = Z
             self.modesFullRes[np.where(np.reshape(pupil, resolution*resolution)>0), i-1] = Z
             
         self.modesFullRes = np.reshape( self.modesFullRes, [resolution, resolution, self.nModes] )
-        if self.gpu:
+        
+        if self.gpu: # if GPU is used, return a GPU-based array
             self.modesFullRes = cp.array(self.modesFullRes, dtype=cp.float32)
 
 
@@ -144,8 +145,9 @@ class Zernike:
         phase = 0
         for i in range(coefs.shape[0]):
             if (coefs[i] is not None) and (not xp.isnan(coefs[i]).item()) and (xp.abs(coefs[i]).item()>1e-13):
-                phase += self.modesFullRes[:,:,i] * coefs[i]
+                phase += self.modesFullRes[:,:,i] * coefs[i] * tel.pupil
         return phase
+
 
     def Mode(self, coef):
         return self.modesFullRes[:,:,coef]
