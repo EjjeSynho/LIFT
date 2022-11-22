@@ -112,11 +112,11 @@ coefs_1, PSF_1, _ = estimator.Reconstruct(PSF_0, R_n='model', mode_ids=modes, op
 #%  ============================ Code in this cell is NOT must have ============================
 def GenerateWFE(coefs):
     if hasattr(Z_basis.modesFullRes, 'device'):
-        Wf_aberrated = (Z_basis.modesFullRes[:,:,modes]*cp.array(coefs[modes])).sum(axis=2) # [m]
-        return cp.asnumpy( (OPD_diversity + Wf_aberrated)*1e9 ) #[nm]
+        WF_aberrated = (Z_basis.modesFullRes[:,:,modes]*cp.array(coefs[modes])).sum(axis=2) # [m]
+        return cp.asnumpy( (OPD_diversity + WF_aberrated)*1e9 ) #[nm]
     else:
-        Wf_aberrated = (Z_basis.modesFullRes[:,:,modes]*coefs[modes]).sum(axis=2) # [m]        
-        return (OPD_diversity + Wf_aberrated)*1e9 #[nm]
+        WF_aberrated = (Z_basis.modesFullRes[:,:,modes]*coefs[modes]).sum(axis=2) # [m]        
+        return (OPD_diversity + WF_aberrated)*1e9 #[nm]
 
 WF_0 = GenerateWFE(coefs_0)
 WF_1 = GenerateWFE(coefs_1)

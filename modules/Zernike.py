@@ -91,6 +91,7 @@ class Zernike:
         X = (X-resolution//2+0.5*(1-resolution%2)) / resolution
         Y = (Y-resolution//2+0.5*(1-resolution%2)) / resolution
         R = np.sqrt(X**2 + Y**2)
+        R /= R.max()
         theta = np.arctan2(Y, X)
 
         self.modesFullRes = np.zeros([resolution**2, self.nModes])
