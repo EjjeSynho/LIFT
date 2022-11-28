@@ -12,8 +12,8 @@ except ImportError or ModuleNotFoundError:
 class Detector:
     def __init__(self, pixel_size, sampling_time, samples=1, RON=0, QE=1):
         self.QE            = QE #TODO: use QE?
-        self.pixel_size    = pixel_size
-        self.readoutNoise  = RON # it's variance
+        self.pixel_size    = pixel_size     #
+        self.readoutNoise  = RON            # STD of the readout noise
         self.sampling_time = sampling_time
         self.samples       = samples   
         self.tag           = 'detector'        

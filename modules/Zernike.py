@@ -128,10 +128,12 @@ class Zernike:
 
 
     # Generate wavefront shape corresponding to given model coefficients and modal basis 
-    def wavefrontFromModes(self, tel, coefs):
+    def wavefrontFromModes(self, tel, coefs_inp):
         xp = cp if self.gpu else np
 
-        if isinstance(coefs, list): coefs = xp.array(coefs).flatten()
+        coefs = xp.array(coefs_inp).flatten()
+        coefs[xp.where(xp.abs(coefs)<1e-13)] = xp.nan
+        valid_ids = xp.where(xp.isfinite(coefs))[0]
 
         if self.modesFullRes is None:
             print('Warning: Zernike modes were not computed! Calculating...')
@@ -143,11 +145,7 @@ class Zernike:
             print('Warning: vector of coefficients is too long. Computiong additional modes...')
             self.computeZernike(tel)
 
-        phase = 0
-        for i in range(coefs.shape[0]):
-            if (coefs[i] is not None) and (not xp.isnan(coefs[i]).item()) and (xp.abs(coefs[i]).item()>1e-13):
-                phase += self.modesFullRes[:,:,i] * coefs[i] * tel.pupil
-        return phase
+        return self.modesFullRes[:,:,valid_ids] @ coefs[valid_ids] * tel.pupil
 
 
     def Mode(self, coef):

@@ -32,15 +32,17 @@ class Telescope:
         self.pupilReflectivity = pupilReflectivity # A non uniform reflectivity can be input by the user
         self.D                 = diameter          # Diameter in m
         self.f                 = focalLength       # Effective focal length of the telescope [m]
-        self.object            = None
-        self.src               = None              # a source object associated to the telescope object
-        self.det               = None
-        self.tag               = 'telescope'       # a tag of the object
+        self.object            = None              # 2-d matrix to be convolved with the PSF 
+        self.src               = None              # A Source object attached to the telescope object
+        self.det               = None              # A Detector object attached to the telescope object
+        self.tag               = 'telescope'       # A tag of the object
+        self.oversampling      = 1                 # minimal PSF oversampling 
         self.gpu               = gpu_flag and global_gpu_flag
-        self.oversampling      = 1
 
         if self.gpu:
             self.pupil = cp.array(self.pupil, dtype=cp.float32)
+            if self.object is not None:
+                self.object = cp.array(self.tel.object, cp.float32)
 
         self.area = np.pi * self.D**2 / 4
         self.fluxMap = lambda nPhotons, sampling_time: self.pupilReflectivity * self.pupil/self.pupil.sum() * nPhotons * self.area * sampling_time
@@ -112,7 +114,7 @@ class Telescope:
         xp = cp if self.gpu else np
 
         if self.src.tag != 'source':
-            print('Error: no proper source object is attached')
+            print('Error: no proper source object is attached!')
             return None
 
         if self.gpu:
@@ -132,10 +134,11 @@ class Telescope:
         PSF_chromatic = xp.dstack(PSF_chromatic)
 
         if intensity:
-            if not polychrome: return PSF_chromatic.sum(axis=2)
+            if not polychrome:
+                return PSF_chromatic.sum(axis=2)
         else:
-            if PSF_chromatic.shape[2] == 1: return PSF_chromatic.squeeze(2)
-
+            if PSF_chromatic.shape[2] == 1:
+                return PSF_chromatic.squeeze(2)
         return PSF_chromatic
 
 

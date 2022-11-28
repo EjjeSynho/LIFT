@@ -1,11 +1,12 @@
 #%%
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Feb 19 10:32:15 2020
-
-@author: cheritie
-"""
 import numpy as np
+try:
+    import cupy as cp
+    global_gpu_flag = True
+
+except ImportError or ModuleNotFoundError:
+    print('CuPy is not found, using NumPy backend...')
+    cp  = np
 
 
 class Source:   #   v-- is a list of turples, each turple is: (band, magnitude)
@@ -28,21 +29,16 @@ class Source:   #   v-- is a list of turples, each turple is: (band, magnitude)
                 })
 
         self.OPD = None
-        self.tag = 'source' # tag of the object
-        
-        #ident = 20
-        #char = '-'
-        #print(ident*char, 'SOURCE', ident*char)
-        #print('Wavelength \t'+str(round(self.wavelength*1e6,3)) + ' \t [microns]') 
-        #print('Optical Band \t'+optBand) 
-        #print('Magnitude \t' + str(self.magnitude))
-        #print('Flux \t\t'+ str(int(np.round(self.nPhoton))) + str('\t [photons/m2/s]'))
-        #print(int(ident*2.4)*char)
+        self.tag = 'source'
 
 
-    def __mul__(self, tel):
-        tel.src = self
-        return tel
+    def __mul__(self, x):
+        if hasattr(x, 'tag'):
+            if x.tag == 'telescope': x.src = self
+            return x
+        elif isinstance(x, int) or isinstance(x, float) or isinstance(x, cp.ndarray) or isinstance(x, np.ndarray):
+            for point in self.spectrum: point['flux'] *= x
+            return self
 
 
     def __InitPhotometry(self):
@@ -100,8 +96,7 @@ class Source:   #   v-- is a list of turples, each turple is: (band, magnitude)
             l_1 = self.__wavelengths[sorted[0][0]]
             l_2 = self.__wavelengths[sorted[1][0]]
 
-            if l_1 > l_2:
-                l_1, l_2 = l_2, l_1
+            if l_1 > l_2: l_1, l_2 = l_2, l_1
 
             def find_params(input):
                 for _,v in self.bands.items():
