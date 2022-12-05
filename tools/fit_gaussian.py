@@ -19,9 +19,11 @@ def gaussian_fourier(height, center_u, center_v, width_x, width_y):
 
 
 def moments(data):
-    """Returns (height, x, y, width_x, width_y)
-    the gaussian parameters of a 2D distribution by calculating its
-    moments """
+    """
+        Returns (height, x, y, width_x, width_y)
+        the gaussian parameters of a 2D distribution by calculating its
+        moments
+    """
     total = data.sum()
     X, Y = np.indices(data.shape)
     x = (X*data).sum()/total
@@ -35,11 +37,12 @@ def moments(data):
 
 
 def fitgaussian(data):
-    """Returns (height, x, y, width_x, width_y)
-    the gaussian parameters of a 2D distribution found by a fit"""
+    """
+        Returns (height, x, y, width_x, width_y)
+        the gaussian parameters of a 2D distribution found by a fit
+    """
     params = moments(data)
-    errorfunction = lambda p: np.ravel(gaussian(*p)(*np.indices(data.shape)) -
-                                 data)
+    errorfunction = lambda p: np.ravel(gaussian(*p)(*np.indices(data.shape))-data)
     p, success = optimize.leastsq(errorfunction, params)
     return p
 
