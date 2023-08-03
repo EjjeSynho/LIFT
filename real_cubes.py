@@ -75,15 +75,8 @@ OPD_diversity = Z_basis.Mode(4)*diversity_shift
 #%%
 test_file = 'C:\\Users\\akuznets\\Data\\KECK\\LIFT\\LIFT\\20200108lift_zc4_8x.fits'
 
-with fits.open(test_file) as hdul:
-    #pupil_small = hdul[0].data.astype('float')
-    datacube = hdul[0].data
-
-#%%
+with fits.open(test_file) as hdul: datacube = hdul[0].data
 PSFs = datacube.mean(axis=1)
-
-plt.imshow(PSFs[0,:,:])
-
 
 #%%  ============================ Code in this cell is NOT must have ============================
 # Synthetic PSF
@@ -131,9 +124,9 @@ def IntialDefocus(im):
     return np.clip(np.sign(diversity_shift) * 250e-9*(p[3]/p[4]-1), a_min=-200-9, a_max=200e-9)
 
 
-print(IntialTT(PSF_0)[0]*1e9, IntialTT(PSF_0)[1]*1e9, IntialDefocus(PSF_0)*1e9)
-plt.imshow(PSF_0)
-plt.show()
+#print(IntialTT(PSF_0)[0]*1e9, IntialTT(PSF_0)[1]*1e9, IntialDefocus(PSF_0)*1e9)
+#plt.imshow(PSF_0)
+#plt.show()
 
 #%%  ============================ Code in this cell is must have ============================
 estimator = LIFT(tel, Z_basis, OPD_diversity, 20)
@@ -145,16 +138,14 @@ A_caps = []
 
 for i in range(21):
     PSF_0 = PSFs[i,:,:]
-    modes = [0,1,2]
+    modes = [0,1,2,3]
 
     #tip, tilt = IntialTT(PSF_0)
     #defocus = IntialDefocus(PSF_0)
-
-    A_init = None
+    #A_init = None
     #A_init = np.zeros(max(modes)+1)
     #A_init[0:3] = (tip*0.5, tilt*0.5, defocus*0.5)
 
-    #coefs_1, PSF_1, _ = estimator.Reconstruct(PSF_0, R_n=None, mode_ids=modes, A_0=A_init, optimize_norm='sum')
     coefs_1, PSF_1, _ = estimator.Reconstruct(PSF_0, R_n=None, mode_ids=modes, optimize_norm='sum')
 
     A_caps.append(coefs_1)

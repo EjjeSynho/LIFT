@@ -140,13 +140,13 @@ class LIFT:
             A_est = xp.array(A_0, dtype=xp.float32)
         A_ests.append(xp.copy(A_est))
 
-        def nomalize_PSF(PSF_in):
+        def normalize_PSF(PSF_in):
             if optimize_norm is not None and optimize_norm is not False:
                 if optimize_norm == 'max': return (PSF_in/PSF_in.max(), PSF_in.max())
                 if optimize_norm == 'sum': return (PSF_in/PSF_in.sum(), PSF_in.sum())
             else: return (PSF_in, 1.0)
         
-        PSF_0, flux_cap = nomalize_PSF(PSF_from_coefs(A_est)) # initial PSF assumtion, normalized to 1.0
+        PSF_0, flux_cap = normalize_PSF(PSF_from_coefs(A_est)) # initial PSF assumtion, normalized to 1.0
 
         flux_scale = 1.0
         if optimize_norm is not None and optimize_norm is not False:
@@ -197,7 +197,7 @@ class LIFT:
                 print()
             
             # Update the PSF image with the estimated coefficients
-            PSF_cap, flux_cap = nomalize_PSF(PSF_from_coefs(A_est))
+            PSF_cap, flux_cap = normalize_PSF(PSF_from_coefs(A_est))
             PSF_cap *= flux_scale
             
             if isinstance(R_n, str):

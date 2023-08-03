@@ -52,12 +52,15 @@ def draw_PSF_difference(inp_0, inp_1, diff, is_log=False, diff_clims=None, crop=
     fig.colorbar(im2, cax=cax, orientation='vertical')
 
 
-def mask_circle(N, r):
+def mask_circle(N, r, center=(0,0), centered=True):
     factor = 0.5 * (1-N%2)
-    coord_range = np.linspace(-N//2+N%2+factor, N//2-factor, N)
-    xx, yy = np.meshgrid(coord_range, coord_range)
+    if centered:
+        coord_range = np.linspace(-N//2+N%2+factor, N//2-factor, N)
+    else:
+        coord_range = np.linspace(0, N-1, N)
+    xx, yy = np.meshgrid(coord_range-center[1], coord_range-center[0])
     pupil_round = np.zeros([N, N], dtype=np.int32)
-    pupil_round[np.sqrt(yy**2 + xx**2) < r] = 1
+    pupil_round[np.sqrt(yy**2+xx**2) < r] = 1
     return pupil_round
 
 

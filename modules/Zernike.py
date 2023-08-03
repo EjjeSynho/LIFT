@@ -18,7 +18,8 @@ class Zernike:
         global global_gpu_flag
         self.nModes = modes_num
         self.modesFullRes = None
-        
+        self.pupil = None
+
         self.modes_names = [
             'Tip', 'Tilt', 'Defocus', 'Astigmatism (X)', 'Astigmatism (+)',
             'Coma vert', 'Coma horiz', 'Trefoil vert', 'Trefoil horiz',
@@ -83,11 +84,11 @@ class Zernike:
 
         self.gpu = self.gpu and tel.gpu
         if normalize_unit:
-            pupil = mask_circle(N=resolution, r=resolution/2)
+            self.pupil = mask_circle(N=resolution, r=resolution/2)
         else:
-            pupil = tel.pupil.get() if self.gpu else tel.pupil
+            self.pupil = tel.pupil.get() if self.gpu else tel.pupil
 
-        X, Y = np.where(pupil == 1)
+        X, Y = np.where(self.pupil == 1)
         X = (X-resolution//2+0.5*(1-resolution%2)) / resolution
         Y = (Y-resolution//2+0.5*(1-resolution%2)) / resolution
         R = np.sqrt(X**2 + Y**2)
@@ -110,7 +111,7 @@ class Zernike:
             Z -= Z.mean()
             Z /= np.std(Z)
 
-            self.modesFullRes[np.where(np.reshape(pupil, resolution*resolution)>0), i-1] = Z
+            self.modesFullRes[np.where(np.reshape(self.pupil, resolution*resolution)>0), i-1] = Z
             
         self.modesFullRes = np.reshape( self.modesFullRes, [resolution, resolution, self.nModes] )
         
@@ -145,7 +146,7 @@ class Zernike:
             print('Warning: vector of coefficients is too long. Computiong additional modes...')
             self.computeZernike(tel)
 
-        return self.modesFullRes[:,:,valid_ids] @ coefs[valid_ids] * tel.pupil
+        return self.modesFullRes[:,:,valid_ids] @ coefs[valid_ids] # * tel.pupil
 
 
     def Mode(self, coef):
