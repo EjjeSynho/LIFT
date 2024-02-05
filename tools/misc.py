@@ -65,11 +65,19 @@ def mask_circle(N, r, center=(0,0), centered=True):
 
 
 # To make this function work, one must ensure that size of inp can be divided by N
-def binning(inp, N):
-    if N == 1: return inp
-    xp = cp if hasattr(inp, 'device') else np
-    out = xp.dstack(xp.split(xp.dstack(xp.split(inp, inp.shape[0]//N, axis=0)), inp.shape[1]//N, axis=1))
-    return out.sum(axis=(0,1)).reshape([inp.shape[0]//N, inp.shape[1]//N]).T
+def binning(inp, N, regime='sum'):
+    if N == 1:
+        return inp
+    
+    xp  = cp.get_array_module(inp)
+    out = xp.stack(xp.split(xp.stack(xp.split(xp.atleast_3d(inp), inp.shape[0]//N, axis=0)), inp.shape[1]//N, axis=2))
+    
+    if    regime == 'max':  func = xp.max
+    elif  regime == 'min':  func = xp.min
+    elif  regime == 'mean': func = xp.mean
+    else: func = xp.sum
+    
+    return xp.squeeze( xp.transpose( func(out, axis=(2,3), keepdims=True), axes=(1,0,2,3,4)) )
 
 
 def Gaussian2DTilted(amp=1.0, x_0=0.0, y_0=0.0, s_x=1.0, s_y=1.0, ang=0.0):
