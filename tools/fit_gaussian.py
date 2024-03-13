@@ -1,7 +1,26 @@
 # %%
 import numpy as np
+import math
 import matplotlib.pyplot as plt
+from numpy import pi, r_
 from scipy import optimize
+
+'''radius = 0.002
+OPD = np.pi / 8.0
+
+x      = np.linspace(-radius, radius, 100)
+xx, yy = np.meshgrid(x, x)
+#circle = xx**2 + yy**2
+
+def astigmatismPSF(xx, yy, r):
+    r_stretched = 2*r/np.sqrt(2.0) 
+    R =  xx * 0 + r_stretched
+    z = np.sqrt(R**2 - xx * yy - (xx**2 + yy**2)*0.5)
+    z[np.isnan(z)] = 0
+    return z / r_stretched
+    
+z = cylinder(xx, yy, radius) * OPD
+plt.imshow(z, extent = [np.min(xx), np.max(xx), np.min(yy), np.max(yy)])'''
 
 
 def gaussian(height, center_x, center_y, width_x, width_y):
@@ -19,15 +38,12 @@ def gaussian_fourier(height, center_u, center_v, width_x, width_y):
 
 
 def moments(data):
-    """
-        Returns (height, x, y, width_x, width_y)
-        the gaussian parameters of a 2D distribution by calculating its
-        moments
-    """
+    """Returns (height, x, y, width_x, width_y) the gaussian
+    parameters of a 2D distribution by calculating its moments """
     total = data.sum()
     X, Y = np.indices(data.shape)
-    x = (X*data).sum()/total
-    y = (Y*data).sum()/total
+    x = (X*data).sum() / total
+    y = (Y*data).sum() / total
     col = data[:, int(y)]
     width_x = np.sqrt(np.abs((np.arange(col.size)-x)**2*col).sum()/col.sum())
     row = data[int(x), :]
@@ -36,19 +52,19 @@ def moments(data):
     return height, x, y, width_x, width_y
 
 
-def fitgaussian(data):
-    """
-        Returns (height, x, y, width_x, width_y)
-        the gaussian parameters of a 2D distribution found by a fit
-    """
-    params = moments(data)
-    errorfunction = lambda p: np.ravel(gaussian(*p)(*np.indices(data.shape))-data)
-    p, success = optimize.leastsq(errorfunction, params)
-    return p
+def gaussian(height, center_x, center_y, width_x, width_y, rotation=0.0):
+    rotation = np.deg2rad(rotation)
+
+    def rot(x, y):
+        xr = x * np.cos(rotation) + y * np.sin(rotation)
+        yr = -x * np.sin(rotation) + y * np.cos(rotation)
+        return xr, yr
+
+    return lambda x, y: height * np.exp(-(((rot(x, y)[0] - center_x) / width_x)**2 + ((rot(x, y)[1] - center_y) / width_y)**2) / 2)
 
 
-def plot_gaussian(data, params, extents=None):
-    fit = gaussian(*params)
+def plot_gaussian(data, params, angle=0.0, extents=None):
+    fit = gaussian(*params, angle)
 
     plt.contour(fit(*np.indices(data.shape)), cmap=plt.cm.copper, extent=extents)
     ax = plt.gca()
@@ -62,6 +78,13 @@ def plot_gaussian(data, params, extents=None):
     y : %.1f
     FWHM$_x$ : %.1f
     FWHM$_y$ : %.1f""" %(x, y, FWHM_x, FWHM_y), fontsize=16, horizontalalignment='right', verticalalignment='bottom', transform=ax.transAxes)
+
+
+def fitgaussian(data, rotation=0.0, w=1):
+    params = moments(data)
+    def errorfunction(p): return np.ravel( w * (gaussian(*p, rotation)(*np.indices(data.shape)) - data) )
+    
+    return optimize.least_squares(errorfunction, params).x
 
 
 def FitAndPlotGauss1D(x, y, label=None):
@@ -80,3 +103,26 @@ def FitAndPlotGauss1D(x, y, label=None):
     #print("Sigma:", popt[2])
     return popt
 
+
+# %%
+# Create the gaussian data
+def fit_test():
+    Xin, Yin = np.mgrid[0:201, 0:201]
+    data = gaussian(3, 100, 100, 20, 40)(Xin, Yin) + np.random.random(Xin.shape)
+
+    plt.matshow(data, cmap=plt.cm.gist_earth_r)
+
+    params = fitgaussian(data)
+    fit = gaussian(*params)
+
+    plt.contour(fit(*np.indices(data.shape)), cmap=plt.cm.copper)
+    ax = plt.gca()
+    (height, x, y, width_x, width_y) = params
+
+    plt.text(0.95, 0.05, """
+    x : %.1f
+    y : %.1f
+    width_x : %.1f
+    width_y : %.1f""" %(x, y, width_x, width_y),
+            fontsize=16, horizontalalignment='right',
+            verticalalignment='bottom', transform=ax.transAxes)

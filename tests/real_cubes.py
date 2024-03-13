@@ -26,9 +26,15 @@ from modules.LIFT      import LIFT
 # Local auxillary modules
 from tools.misc import draw_PSF_difference, mask_circle
 from tools.fit_gaussian import fitgaussian, plot_gaussian
+import json
+
+with open('configs/path_info.json') as f:
+    config = json.load(f)
+
+data_dir = config['path_pupil']
 
 #%%  ============================ Code in this cell is must have ============================
-with fits.open('C:\\Users\\akuznets\\Data\\KECK\\keckPupil64x64pixForCrossComparison.fits') as hdul:
+with fits.open(data_dir+'keckPupil64x64pixForCrossComparison.fits') as hdul:
     pupil_small = hdul[0].data.astype('float')
 
 #pupil_small = mask_circle(pupil_small.shape[0], pupil_small.shape[0]//2)
@@ -73,7 +79,7 @@ diversity_shift = -253e-9 #[m]
 OPD_diversity = Z_basis.Mode(4)*diversity_shift
 
 #%%
-test_file = 'C:\\Users\\akuznets\\Data\\KECK\\LIFT\\LIFT\\20200108lift_zc4_8x.fits'
+test_file = data_dir+'LIFT/LIFT/20200108lift_zc4_8x.fits'
 
 with fits.open(test_file) as hdul: datacube = hdul[0].data
 PSFs = datacube.mean(axis=1)

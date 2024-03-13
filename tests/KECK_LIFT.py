@@ -17,23 +17,29 @@ import skimage.measure
 from tqdm import tqdm
 
 # Local modules
-from modules.Telescope import Telescope
-from modules.Detector  import Detector
-from modules.Source    import Source
-from modules.Zernike   import Zernike
-from modules.LIFT      import LIFT
+from LIFT.modules.Telescope import Telescope
+from LIFT.modules.Detector  import Detector
+from LIFT.modules.Source    import Source
+from LIFT.modules.Zernike   import Zernike
+from LIFT.modules.LIFT      import LIFT
 
 # Local auxillary modules
 from tools.misc import draw_PSF_difference
+import json
+
+with open('configs/path_info.json') as f:
+    config = json.load(f)
+
+data_dir = config['path_pupil']
 
 #%%  ============================ Code in this cell is must have ============================
-#with fits.open('C:\\Users\\akuznets\\Data\\KECK\\pupil_largehex_4096_ROT008.fits') as hdul:
+#with fits.open(data_dir+'pupil_largehex_4096_ROT008.fits') as hdul:
 #    pupil_big = hdul[0].data.astype('float')
 #pupil_small = resize(pupil_big, (64, 64), anti_aliasing=False) # mean pooling, spiders are lost
 #pupil_small[np.where(pupil_small<1.0)] = 0.0
 ##pupil_small = skimage.measure.block_reduce(pupil_big, (64,64), np.min) # min pooling to preserve spiders
 
-with fits.open('C:\\Users\\akuznets\\Data\\KECK\\keckPupil64x64pixForCrossComparison.fits') as hdul:
+with fits.open(data_dir+'keckPupil64x64pixForCrossComparison.fits') as hdul:
     pupil_small = hdul[0].data.astype('float')
 
 
@@ -75,8 +81,8 @@ OPD_diversity = Z_basis.Mode(3)*diversity_shift
 
 #%%  ============================ Code in this cell is NOT must have ============================
 # Synthetic PSF
-coefs_0 = np.array([10, -150, 200, 20, -45, 34, 51, -29, 20, 10])*1e-9 #[m]
-#coefs_0 = np.array([0, 0, 200, 0, 0, 0, 0, 0, 0, 0])*1e-9 #[m]
+#coefs_0 = np.array([10, -150, 200, 20, -45, 34, 51, -29, 20, 10])*1e-9 #[m]
+coefs_0 = np.array([0, 0, 200, 0, 0, 0, 0, 0, 0, 0])*1e-9 #[m]
 
 def PSFfromCoefs(coefs):
     tel.src.OPD = Z_basis.wavefrontFromModes(tel,coefs) + OPD_diversity

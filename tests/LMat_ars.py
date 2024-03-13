@@ -8,11 +8,14 @@ from modules.Zernike   import Zernike
 from modules.LIFT      import LIFT
 from astropy.io import fits
 
-with fits.open('C:\\Users\\akuznets\\Data\\KECK\\keckPupil64x64pixForCrossComparison.fits') as hdul:
+root = data_dir+''
+with fits.open(root+'circular_pupil_64.fits') as hdul:
     pupil_big = hdul[0].data.astype('float')
 
+#with fits.open(root+'arseny_pupil.fits') as hdul:
+#    pupil_big = hdul[0].data.astype('float')
 
-test_file = 'C:\\Users\\akuznets\\Data\\KECK\\LIFT\\LIFT\\20200108lift_zc4_8x.fits'
+test_file = root+'LIFT/LIFT/20200108lift_zc4_8x.fits'
 
 with fits.open(test_file) as hdul: datacube = hdul[0].data
 PSFs = datacube.mean(axis=1)
@@ -29,8 +32,9 @@ for i in range(PSFs.shape[0]):
     d_modp          = 4
     modes           = np.asarray([0,1,2]).tolist()
     ang_pixel       = np.asarray(50)
-    D               = np.asarray(10.0)
-    NGS_Band        = 'Ks'
+    D               = np.asarray(11.732)
+    D               = np.asarray(10)
+    NGS_Band        = 'H'
     sampling_time   = np.asarray(5e-3)
     
     QE = 0.7
@@ -75,7 +79,8 @@ for i in range(PSFs.shape[0]):
 import matplotlib.pyplot as plt
 
 A_caps = np.array(results)
-
+plt.figure(dpi=200)
+plt.title('circular_pupil_64.fits')
 x = np.arange(A_caps.shape[0], dtype='int')
 for i in np.arange(A_caps.shape[1]):
     plt.plot(x,A_caps[:,i]*1e9, label=Z_basis.modeName(i))

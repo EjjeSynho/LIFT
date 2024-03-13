@@ -6,13 +6,15 @@ import numpy as np
 import sys
 try:
     import cupy as cp
+    import cupyx
+    from cupyx.scipy.fftpack import get_fft_plan
     global_gpu_flag = True
 except ImportError or ModuleNotFoundError:
     print('CuPy is not found, using NumPy backend...')
     cp = np
     global_gpu_flag = False
 
-from tools.misc import binning
+from LIFT.tools.misc import binning
 
 
 class Telescope:
@@ -39,10 +41,10 @@ class Telescope:
         self.oversampling      = 1                 # minimal PSF oversampling 
         self.gpu               = gpu_flag and global_gpu_flag
 
-        if self.gpu:
-            self.pupil = cp.array(self.pupil, dtype=cp.float32)
-            if self.object is not None:
-                self.object = cp.array(self.tel.object, cp.float32)
+        # if self.gpu:
+        #     self.pupil = cp.array(self.pupil, dtype=cp.float32)
+        #     if self.object is not None:
+        #         self.object = cp.array(self.tel.object, cp.float32)
 
         self.area = np.pi * self.D**2 / 4
         self.fluxMap = lambda nPhotons, sampling_time: self.pupilReflectivity * self.pupil/self.pupil.sum() * nPhotons * self.area * sampling_time
@@ -54,6 +56,34 @@ class Telescope:
         print('Diameter \t\t\t'+str(self.D) + ' \t [m]') 
         print('Pupil sampling \t\t\t'+str(self.pupil.shape[0]) + ' \t [pix]') 
         print(int(ident*2.4)*char)
+
+
+    @property
+    def gpu(self):
+        return self.__gpu
+    
+
+    @gpu.setter
+    def gpu(self, var):
+        if var:
+            self.__gpu = True
+            if hasattr(self, 'pupil'):
+                if not hasattr(self.pupil, 'device'):
+                    self.pupil = cp.array(self.pupil, dtype=cp.float32)
+               
+            if self.object is not None:
+                if not hasattr(self.object, 'device'):
+                    self.object = cp.array(self.object, dtype=cp.float32)
+            
+        else:
+            self.__gpu = False
+            if hasattr(self, 'pupil'):
+                if hasattr(self.pupil, 'device'):
+                    self.pupil = self.pupil.get()
+
+            if self.object is not None:
+                if hasattr(self.object, 'device'):
+                    self.object = self.object.get()
 
 
     def PropagateField(self, amplitude, phase, wavelength, return_intensity, oversampling=None):
@@ -107,14 +137,14 @@ class Telescope:
         if return_intensity:
             return binning(xp.abs(EMF)**2, self.oversampling)
 
-        return EMF # in this case, raw electromagnetic field is returned. It can't be simply binned
+        return EMF # in this case, raw electromagnetic field is returned. It can't be simpli binned
 
 
-    def ComputePSF(self, intensity=True, polychrome=False, oversampling=1):
+    def ComputePSF(self, intensity=True, polychrome=True, oversampling=1):
         xp = cp if self.gpu else np
 
         if self.src.tag != 'source':
-            print('Error: no proper source object is attached!')
+            print('Error: no proper source object is attached')
             return None
 
         if self.gpu:
@@ -134,12 +164,128 @@ class Telescope:
         PSF_chromatic = xp.dstack(PSF_chromatic)
 
         if intensity:
-            if not polychrome:
+            if polychrome:
                 return PSF_chromatic.sum(axis=2)
+            else:
+                return PSF_chromatic
         else:
             if PSF_chromatic.shape[2] == 1:
                 return PSF_chromatic.squeeze(2)
-        return PSF_chromatic
+            else:
+                return PSF_chromatic.squeeze(2)
+
+
+    def PropagateFieldBatch(self, OPD, wavelength, amplitude=1., return_batch=True):
+        xp = cp if self.gpu else np
+        oversampling = 1 # Yet unsupported
+        
+        if hasattr(OPD, 'device'):
+            phase = OPD* 2*xp.pi/wavelength
+        else:
+            phase = xp.array( OPD, dtype=xp.float32 ) * 2*xp.pi/wavelength
+
+        zeroPaddingFactor = self.f / self.det.pixel_size * wavelength / self.D
+        resolution = self.pupil.shape[0]
+
+        N = int(np.fix(zeroPaddingFactor * oversampling * resolution))
+
+        if self.img_resolution * oversampling > N:
+            print('Error: image sampling is too big for the pupil sampling')
+            return None
+
+        # If PSF is strongly undersampled, appply oversampling trick
+        if zeroPaddingFactor * oversampling < 2:
+            oversampling = 2.0 / zeroPaddingFactor
+
+        pad_width = np.ceil((N-resolution)/2).astype('int')
+
+        supportPadded = xp.zeros([resolution+2*pad_width, resolution+2*pad_width, phase.shape[2]], dtype=xp.complex64)
+        supportPadded[pad_width:pad_width+resolution, pad_width:pad_width+resolution,:] = amplitude * xp.exp(1j*phase)
+
+        N = supportPadded.shape[0]
+        img_size = np.ceil(self.img_resolution*oversampling).astype('int')
+
+        # PSF computation
+        [xx,yy] = xp.meshgrid( xp.linspace(0,N-1,N), xp.linspace(0,N-1,N), copy=False)
+        center_aligner = xp.expand_dims(xp.exp(-1j*xp.pi/N * (xx+yy) * (1-self.img_resolution%2)), axis=2).astype(xp.complex64)
+        #                                                        ^--- this is to account odd/even number of pixels
+
+        # Propagate with Fourier shifting
+        if self.gpu:
+            plan = get_fft_plan(supportPadded, axes=(0, 1), value_type='C2C')  # for batched, C2C, 2D transform
+            supportPadded = cupyx.scipy.fft.ifftshift(supportPadded * center_aligner)
+            PSF = cupyx.scipy.fft.fftshift(1/N * cupyx.scipy.fft.fft2(supportPadded, axes=(0, 1), plan=plan))
+        else:
+            supportPadded = np.fft.ifftshift(supportPadded * center_aligner)
+            PSF = np.fft.fftshift(1/N * np.fft.fft2(supportPadded, axes=(0, 1), plan=plan))
+
+        #del supportPadded, center_aligner, xx, yy
+
+        if N % 2 == img_size%2:
+            shift_pix = 0
+        else:
+            if N%2 == 0: shift_pix = 1
+            else: shift_pix = -1
+
+        ids = np.array([np.ceil(N/2) - img_size//2 + (1-N%2)-1, np.ceil(N/2)+ img_size//2 + shift_pix]).astype('uint')
+        PSF = PSF[ids[0]:ids[1], ids[0]:ids[1]]
+
+        # Take oversampling into account
+        if oversampling > 1:
+            raise NotImplementedError('Error: unsupported feature')
+
+        if return_batch:
+            return xp.abs(PSF)**2
+        else:
+            return xp.sum(xp.abs(PSF)**2, axis=2)
+
+
+    def ComputePSFBatch(self, OPD=None, polychrome=True, return_batch=False, return_GPU=False):
+        xp = cp if self.gpu else np
+        
+        if self.src.tag != 'source':
+            print('Error: no proper source object is attached')
+            return None
+
+        if OPD is None:
+            OPD = self.src.OPD
+
+        if self.gpu:
+            mempool = cp.get_default_memory_pool()
+            pinned_mempool = cp.get_default_pinned_memory_pool()
+            
+        PSF_spectral = None
+        
+        amplitude = xp.atleast_3d(self.pupil)
+        
+        if self.gpu:
+            amplitude = cp.array(amplitude, dtype=cp.float32) # [N x N x 1]
+
+        try:
+            PSF_spectral = []
+            for point in self.src.spectrum:
+                wavelength = point['wavelength']
+                flux = self.flux(point['flux'], self.det.sampling_time)
+                PSF_spectral.append( self.PropagateFieldBatch(OPD, wavelength,  np.sqrt(flux)*amplitude, return_batch) )
+
+            return_format = lambda x: x if return_GPU else cp.asnumpy(x)
+
+            if return_batch:
+                PSF_spectral = return_format( xp.stack(PSF_spectral).transpose([1,2,3,0]) )
+            else:
+                PSF_spectral = return_format( xp.dstack(PSF_spectral) )
+
+            if polychrome:
+                PSF_spectral = PSF_spectral.sum(axis=-1)
+
+        except cp.cuda.memory.OutOfMemoryError:
+            print('Not enough VRAM')
+        
+        if self.gpu:
+            mempool.free_all_blocks()
+            pinned_mempool.free_all_blocks()
+            
+        return PSF_spectral
 
 
     def GetAxesPSF(self, PSF, units):
@@ -166,5 +312,3 @@ class Telescope:
 
     def resetOPD(self):
         self.OPD = self.pupil.copy() # re-initialize the telescope OPD to a flat wavefront
-    
-

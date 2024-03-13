@@ -10,7 +10,7 @@ except ImportError or ModuleNotFoundError:
     cp = np
     global_gpu_flag = False
 
-from tools.misc import mask_circle
+from LIFT.tools.misc import mask_circle
 
 
 class Zernike:
@@ -29,7 +29,25 @@ class Zernike:
             'Secondary trefoil horiz', 'Secondary trefoil vert',
             'Pentafoil horiz', 'Pentafoil vert'
         ]
-        self.gpu = global_gpu_flag
+        self.gpu = global_gpu_flag  
+
+
+    @property
+    def gpu(self):
+        return self.__gpu
+
+    @gpu.setter
+    def gpu(self, var):
+        if var:
+            self.__gpu = True
+            if hasattr(self, 'modesFullRes'):
+                if not hasattr(self.modesFullRes, 'device'):
+                    self.modesFullRes = cp.array(self.modesFullRes, dtype=cp.float32)
+        else:
+            self.__gpu = False
+            if hasattr(self, 'modesFullRes'):
+                if hasattr(self.modesFullRes, 'device'):
+                    self.modesFullRes = self.modesFullRes.get()
 
 
     def zernikeRadialFunc(self, n, m, r):
@@ -59,18 +77,33 @@ class Zernike:
     def zernIndex(self, j):
         n = int((-1.0 + np.sqrt(8*(j-1)+1))/2.)
         p = (j-(n*(n+1))/2.)
-        k = n%2
+        k = n % 2
         m = int((p+k)/2.)*2 - k
 
-        if m!=0:
-            if j % 2 == 0:  s=1
-            else:  s=-1
+        if m != 0:
+            if j % 2 == 0: s = 1
+            else:  s = -1
             m *= s
 
         return [n, m]
 
 
-    def computeZernike(self, tel, normalize_unit=False):
+    def rotate_coordinates(self, angle, X, Y):
+            angle_rad = np.radians(angle)
+
+            rotation_matrix = np.array([
+                [np.cos(angle_rad), -np.sin(angle_rad)],
+                [np.sin(angle_rad), np.cos(angle_rad)]
+            ])
+
+            coordinates = np.vstack((X, Y))
+            rotated_coordinates = np.dot(rotation_matrix, coordinates)
+            rotated_X, rotated_Y = rotated_coordinates[0, :], rotated_coordinates[1, :]
+
+            return rotated_X, rotated_Y
+        
+
+    def computeZernike(self, tel, normalize_unit=False, angle=None, transposed=False):
         """
         Function to calculate the Zernike modal basis
 
@@ -91,6 +124,13 @@ class Zernike:
         X, Y = np.where(self.pupil == 1)
         X = (X-resolution//2+0.5*(1-resolution%2)) / resolution
         Y = (Y-resolution//2+0.5*(1-resolution%2)) / resolution
+        
+        if transposed:
+            X, Y = Y, X
+        
+        if angle is not None and angle != 0.0:
+            X, Y = self.rotate_coordinates(angle, X, Y)
+        
         R = np.sqrt(X**2 + Y**2)
         R /= R.max()
         theta = np.arctan2(Y, X)
