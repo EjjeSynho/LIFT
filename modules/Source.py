@@ -8,7 +8,6 @@ except ImportError or ModuleNotFoundError:
     print('CuPy is not found, using NumPy backend...')
     cp  = np
 
-
 class Source:   #   v-- is a list of turples, each turple is: (band, magnitude)
     def __init__(self, input=None):
         if input is None:

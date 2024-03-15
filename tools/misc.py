@@ -1,24 +1,17 @@
 #%%
-import pickle
-import numpy as np
-import os
-import tempfile
-import subprocess
-from LIFT.tools.fit_gaussian import gaussian
-import matplotlib.pyplot as plt
-from PIL import Image
-from matplotlib import cm
-from graphviz import Digraph
-import torch
+import sys
+sys.path.append(".")
+sys.path.append("..")
 
-from photutils.centroids import centroid_quadratic
-from photutils.profiles  import RadialProfile
+from matplotlib import pyplot as plt
+import numpy as np
+from tools.fit_gaussian import gaussian
 
 import numpy as np
 try:
     import cupy as cp
 except ImportError or ModuleNotFoundError:
-    print('CuPy is not found, using NumPy backend...')
+    print('CuPy is not installed, using NumPy backend...')
     cp = np
 
 
@@ -49,15 +42,6 @@ def TruePhotonsFromMag(tel, mag, band, sampling_time): # [photons/aperture] !not
     xp = cp if tel.gpu else np
     c = tel.pupilReflectivity * xp.pi*(tel.D/2)**2*sampling_time
     return tel.src.PhotometricParameters(band)[2]/368 * 10**(-mag/2.5) * c
-
-
-def calc_profile(data, xycen=None):
-    if xycen is None:
-        xycen = centroid_quadratic(np.abs(data))
-
-    edge_radii = np.arange(data.shape[-1]//2)
-    rp = RadialProfile(data, xycen, edge_radii)
-    return rp.profile
 
 
 def optimal_img_size(tel, N_modes, force_odd=True, force_even=False):
@@ -115,22 +99,6 @@ def decompose_wavefront(WF, modal_basis, pupil_mask):
     return coefs
 
 
-def symshow(x, lim=None, fixed=False, ax=None):
-    x_ = np.nan_to_num(x)
-    c_lim = np.maximum(np.abs(x_.min()), x_.max())
-    
-    if lim is not None and not fixed:
-        c_lim = np.minimum(c_lim, lim)
-        
-    elif lim is not None and fixed:
-        c_lim = lim
-    
-    if ax is None:
-        return plt.imshow(x, vmin=-c_lim, vmax=c_lim, origin='lower')
-    else:
-        return ax.imshow(x, vmin=-c_lim, vmax=c_lim, origin='lower')
-
-
 modes_colors = [
     'tab:blue',
     'tab:orange',
@@ -153,53 +121,8 @@ modes_colors = [
     'khaki',
     'gold',
     'goldenrod',
-    'darkgoldenrod']
-
-
-def draw_PSF_difference(inp_0, inp_1, diff, is_log=False, diff_clims=None, crop=None, colormap='viridis'):
-    from mpl_toolkits.axes_grid1 import make_axes_locatable
-    fig, axs = plt.subplots(1,3)
-    fig.set_size_inches(15,15)
-
-    if crop is None:
-        data_0 = np.copy(inp_0)
-        data_1 = np.copy(inp_1)
-    else:
-        data_0 = inp_0[crop]
-        data_1 = inp_1[crop]
-
-    if is_log:
-        vmin = np.nanmin(np.log(data_0))
-        vmax = np.nanmax(np.log(data_0))
-        im0 = axs[0].imshow(np.log(data_0), vmin=vmin, vmax=vmax, cmap=colormap)
-    else:
-        vmin = np.nanmin(data_0)
-        vmax = np.nanmax(data_0)
-        im0 = axs[0].imshow(data_0, vmin=vmin, vmax=vmax, cmap=colormap)
-
-    divider = make_axes_locatable(axs[0])
-    cax = divider.append_axes('right', size='10%', pad=0.05)
-    axs[0].set_axis_off()
-    fig.colorbar(im0, cax=cax, orientation='vertical')
-
-    if is_log:
-        im1 = axs[1].imshow(np.log(data_1), vmin=vmin, vmax=vmax, cmap=colormap)
-    else:
-        im1 = axs[1].imshow(data_1, vmin=vmin, vmax=vmax, cmap=colormap)
-        
-    divider = make_axes_locatable(axs[1])
-    cax = divider.append_axes('right', size='10%', pad=0.05)
-    axs[1].set_axis_off()
-    fig.colorbar(im1, cax=cax, orientation='vertical')
-
-    if diff_clims is None:
-        diff_clims = np.abs(diff).max()
-
-    im2 = axs[2].imshow(diff, cmap=plt.get_cmap("RdYlBu"), vmin=-diff_clims, vmax=diff_clims)
-    divider = make_axes_locatable(axs[2])
-    cax = divider.append_axes('right', size='10%', pad=0.05)
-    axs[2].set_axis_off()
-    fig.colorbar(im2, cax=cax, orientation='vertical')
+    'darkgoldenrod'
+]
 
 
 def mask_circle(N, r, center=(0,0), centered=True):
@@ -262,65 +185,152 @@ def NoisyPSF(tel, PSF, integrate=True):
 
 # %%
 
-def plt2PIL(fig=None):
-    # Render the figure on a canvas
-    if fig is None:
-        # fig = plt.gcf()
-        canvas = plt.get_current_fig_manager().canvas
-    else:
-        canvas = fig.canvas
-
-    canvas.draw()
-    rgba = canvas.buffer_rgba()
-
-    # Create a numpy array from the bytes
-    buffer = np.array(rgba).tobytes()
-    # Create a PIL image from the bytes
-    pil_image = Image.frombuffer('RGBA', (canvas.get_width_height()), buffer, 'raw', 'RGBA', 0, 1)
-
-    return pil_image
-
-
-def save_GIF(array, duration=1e3, scale=1, path='test.gif', colormap=cm.viridis):
-    from skimage.transform import rescale
-    
-    # If the input is an array or a tensor, we need to convert it to a list of PIL images first
-    if type(array) == torch.Tensor or type(array) == np.ndarray:
-        gif_anim = []
-        if type(array) == torch.Tensor:
-            array_ = array.cpu().numpy()
+try:
+    import matplotlib.pyplot as plt
+except ImportError:
+    pass
+else:
+    def symshow(x, lim=None, fixed=False, ax=None):
+        x_ = np.nan_to_num(x)
+        c_lim = np.maximum(np.abs(x_.min()), x_.max())
+        
+        if lim is not None and not fixed:
+            c_lim = np.minimum(c_lim, lim)
+            
+        elif lim is not None and fixed:
+            c_lim = lim
+        
+        if ax is None:
+            return plt.imshow(x, vmin=-c_lim, vmax=c_lim, origin='lower')
         else:
+            return ax.imshow(x, vmin=-c_lim, vmax=c_lim, origin='lower')
+
+
+    def draw_PSF_difference(inp_0, inp_1, diff, is_log=False, diff_clims=None, crop=None, colormap='viridis'):
+        from mpl_toolkits.axes_grid1 import make_axes_locatable
+        fig, axs = plt.subplots(1,3)
+        fig.set_size_inches(15,15)
+
+        if crop is None:
+            data_0 = np.copy(inp_0)
+            data_1 = np.copy(inp_1)
+        else:
+            data_0 = inp_0[crop]
+            data_1 = inp_1[crop]
+
+        if is_log:
+            vmin = np.nanmin(np.log(data_0))
+            vmax = np.nanmax(np.log(data_0))
+            im0 = axs[0].imshow(np.log(data_0), vmin=vmin, vmax=vmax, cmap=colormap)
+        else:
+            vmin = np.nanmin(data_0)
+            vmax = np.nanmax(data_0)
+            im0 = axs[0].imshow(data_0, vmin=vmin, vmax=vmax, cmap=colormap)
+
+        divider = make_axes_locatable(axs[0])
+        cax = divider.append_axes('right', size='10%', pad=0.05)
+        axs[0].set_axis_off()
+        fig.colorbar(im0, cax=cax, orientation='vertical')
+
+        if is_log:
+            im1 = axs[1].imshow(np.log(data_1), vmin=vmin, vmax=vmax, cmap=colormap)
+        else:
+            im1 = axs[1].imshow(data_1, vmin=vmin, vmax=vmax, cmap=colormap)
+            
+        divider = make_axes_locatable(axs[1])
+        cax = divider.append_axes('right', size='10%', pad=0.05)
+        axs[1].set_axis_off()
+        fig.colorbar(im1, cax=cax, orientation='vertical')
+
+        if diff_clims is None:
+            diff_clims = np.abs(diff).max()
+
+        im2 = axs[2].imshow(diff, cmap=plt.get_cmap("RdYlBu"), vmin=-diff_clims, vmax=diff_clims)
+        divider = make_axes_locatable(axs[2])
+        cax = divider.append_axes('right', size='10%', pad=0.05)
+        axs[2].set_axis_off()
+        fig.colorbar(im2, cax=cax, orientation='vertical')
+
+
+try:
+    from PIL import Image
+    from matplotlib import cm
+except ImportError:
+    pass
+
+else:
+    def plt2PIL(fig=None):
+        # Render the figure on a canvas
+        if fig is None:
+            # fig = plt.gcf()
+            canvas = plt.get_current_fig_manager().canvas
+        else:
+            canvas = fig.canvas
+
+        canvas.draw()
+        rgba = canvas.buffer_rgba()
+
+        # Create a numpy array from the bytes
+        buffer = np.array(rgba).tobytes()
+        # Create a PIL image from the bytes
+        pil_image = Image.frombuffer('RGBA', (canvas.get_width_height()), buffer, 'raw', 'RGBA', 0, 1)
+
+        return pil_image
+
+
+    def save_GIF(array, duration=1e3, scale=1, path='test.gif', colormap=cm.viridis):
+        from skimage.transform import rescale
+        
+        # If the input is an array or a tensor, we need to convert it to a list of PIL images first
+        if type(array) == np.ndarray:
+            gif_anim = []
             array_ = array.copy()
 
-        if array.shape[0] != array.shape[1] and array.shape[1] == array.shape[2]:
-            array_ = array_.transpose(1,2,0)
+            if array.shape[0] != array.shape[1] and array.shape[1] == array.shape[2]:
+                array_ = array_.transpose(1,2,0)
 
-        for layer in np.rollaxis(array_, 2):
-            buf = layer/layer.max()
-            if scale != 1.0:
-                buf = rescale(buf, scale, order=0)
-            gif_anim.append( Image.fromarray(np.uint8(colormap(buf)*255)) )
-    else:
-        # In this case, we can directly save the list of PIL images
-        gif_anim = array
+            for layer in np.rollaxis(array_, 2):
+                buf = layer/layer.max()
+                if scale != 1.0:
+                    buf = rescale(buf, scale, order=0)
+                gif_anim.append( Image.fromarray(np.uint8(colormap(buf)*255)) )
+        else:
+            # In this case, we can directly save the list of PIL images
+            gif_anim = array
 
-    # gif_anim[0].save(path, save_all=True, append_images=gif_anim[1:], optimize=False, quality=100, duration=duration, loop=0)
-    gif_anim[0].save(path, save_all=True, append_images=gif_anim[1:], optimize=False, compress_level=0, duration=duration, loop=0)
+        # gif_anim[0].save(path, save_all=True, append_images=gif_anim[1:], optimize=False, quality=100, duration=duration, loop=0)
+        gif_anim[0].save(path, save_all=True, append_images=gif_anim[1:], optimize=False, compress_level=0, duration=duration, loop=0)
 
 
-def save_GIF_RGB(images_stack, duration=1e3, downscale=4, path='test.gif'):
-    from PIL import Image
-    gif_anim = []
+    def save_GIF_RGB(images_stack, duration=1e3, downscale=4, path='test.gif'):
+        from PIL import Image
+        gif_anim = []
+        
+        def remove_transparency(img, bg_colour=(255, 255, 255)):
+            alpha = img.convert('RGBA').split()[-1]
+            bg = Image.new("RGBA", img.size, bg_colour + (255,))
+            bg.paste(img, mask=alpha)
+            return bg
+        
+        for layer in images_stack:
+            im = Image.fromarray(np.uint8(layer*255))
+            im.thumbnail((im.size[0]//downscale, im.size[1]//downscale), Image.ANTIALIAS)
+            gif_anim.append( remove_transparency(im) )
+            gif_anim[0].save(path, save_all=True, append_images=gif_anim[1:], optimize=True, duration=duration, loop=0)
+
+
+try:
+    from photutils.centroids import centroid_quadratic
+    from photutils.profiles  import RadialProfile
     
-    def remove_transparency(img, bg_colour=(255, 255, 255)):
-        alpha = im.convert('RGBA').split()[-1]
-        bg = Image.new("RGBA", im.size, bg_colour + (255,))
-        bg.paste(im, mask=alpha)
-        return bg
-    
-    for layer in images_stack:
-        im = Image.fromarray(np.uint8(layer*255))
-        im.thumbnail((im.size[0]//downscale, im.size[1]//downscale), Image.ANTIALIAS)
-        gif_anim.append( remove_transparency(im) )
-        gif_anim[0].save(path, save_all=True, append_images=gif_anim[1:], optimize=True, duration=duration, loop=0)
+except ImportError:
+    pass
 
+else:
+    def calc_profile(data, xycen=None):
+        if xycen is None:
+            xycen = centroid_quadratic(np.abs(data))
+
+        edge_radii = np.arange(data.shape[-1]//2)
+        rp = RadialProfile(data, xycen, edge_radii)
+        return rp.profile

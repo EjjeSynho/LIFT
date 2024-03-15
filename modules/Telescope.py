@@ -9,12 +9,13 @@ try:
     import cupyx
     from cupyx.scipy.fftpack import get_fft_plan
     global_gpu_flag = True
+    
 except ImportError or ModuleNotFoundError:
     print('CuPy is not found, using NumPy backend...')
     cp = np
     global_gpu_flag = False
 
-from LIFT.tools.misc import binning
+from tools.misc import binning
 
 
 class Telescope:

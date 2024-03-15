@@ -100,8 +100,8 @@ estimator = LIFT(tel, Z_basis, OPD_diversity, 20)
 
 # Increase the flux artificially to test the robustness of the normalization
 # optimization inside the LIFT
-PSF_0 *= 4
-R_n *= 4
+# PSF_0 *= 4
+# R_n *= 4
 
 modes = [0,1,2,3,4,5,6,7,8,9]
 #                                           Flux optimization is important! --------------V

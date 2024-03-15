@@ -10,7 +10,7 @@ except ImportError or ModuleNotFoundError:
     cp = np
     global_gpu_flag = False
 
-from LIFT.tools.misc import mask_circle
+from tools.misc import mask_circle
 
 
 class Zernike:

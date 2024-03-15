@@ -1,0 +1,7 @@
+cupy
+pillow
+astropy
+astropy
+photutils
+matplotlib
+skimage
