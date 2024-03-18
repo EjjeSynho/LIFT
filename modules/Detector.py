@@ -58,5 +58,4 @@ class Detector:
     def __mul__(self, tel):
         tel.det = self
         self.object = tel.object
-
         return tel
