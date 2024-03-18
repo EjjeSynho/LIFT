@@ -3,6 +3,7 @@ sys.path.insert(0, '..')
 
 import numpy as np
 from scipy import signal as sg
+import warnings
 
 global global_gpu_flag
 
@@ -60,6 +61,17 @@ class LIFT:
         if self.tel.object is not None:
             return xg.convolve2d(mat, self.tel.object, boundary='symm', mode='same') / self.tel.object.sum()
         else: return mat
+
+
+    def __check_modes(self, modes):
+        for mode in modes:
+            if mode < 0:
+                warnings.warn('Negative mode number detected, this is not allowed. Removed.')
+                modes.remove(mode)
+            if mode >= self.modeBasis.modesFullRes.shape[2]:
+                warnings.warn('Mode number exceeds the number of modes in the basis. Removed. Consider regenerating the modal basis with more modes included.')
+                modes.remove(mode)        
+        return modes
 
 
     def generateLIFTinteractionMatrices(self, coefs, modes_ids, flux_norm=1.0, numerical=False):
@@ -144,7 +156,9 @@ class LIFT:
             OPD = self.modeBasis.wavefrontFromModes(self.tel, coefs)
             self.tel.src.OPD = self.diversity_OPD + OPD
             return self.obj_convolve( self.tel.ComputePSF() )
-                   
+
+        mode_ids = self.__check_modes(mode_ids)
+        
         C      = []  # optimization criterion
         Hs     = []  # interaction matrices for every iteration
         P_MLs  = []  # estimators for every iteration
@@ -260,11 +274,34 @@ class LIFT:
                                              of the input PSF. If 'max', then the reconstructed PSF is normalized to the maximal value of the input PSF.
         """
         if self.gpu:
-            xp = cp
-            convert = lambda x: cp.asnumpy(x)
+            try:
+                xp = cp
+                convert = lambda x: cp.asnumpy(x)
+            except:
+                xp = np
+                convert = lambda x: x
         else:
             xp = np
             convert = lambda x: x
+        
+        mode_ids = self.__check_modes(mode_ids)
+        
+        # Check device of the input data
+        def check_backend(data):
+            if data is None:
+                return None
+            
+            if not isinstance(data, xp.ndarray):
+                warnings.warn('Wrong backend of the input data, converting to the proper one...')
+                return xp.array(data, dtype=xp.float32).squeeze() # avoid adding singleton dimensions
+            else:
+                return data
+                
+        PSF_inp = check_backend(PSF_inp)
+        R_n     = check_backend(R_n)
+        A_mean  = check_backend(A_mean)
+        A_var   = check_backend(A_var)
+        A_0     = check_backend(A_0)
 
         def PSF_from_coefs(coefs):
             OPD = self.modeBasis.wavefrontFromModes(self.tel, coefs)
@@ -279,10 +316,11 @@ class LIFT:
         modes = xp.sort( xp.array(mode_ids, dtype=xp.int32) )
 
         # Account for the intial assumption for the coefficients values
-        if A_0 is None:
+        if A_0 is None or xp.any(A_0[mode_ids] == np.nan):
             A_est = xp.zeros(modes.max().item()+1, dtype=xp.float32)
         else:
             A_est = xp.array(A_0, dtype=xp.float32)
+        
         A_ests.append(xp.copy(A_est))
 
         C_phi_inv = 1.0 / A_var[mode_ids] # Inverse of the covariance vector
