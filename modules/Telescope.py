@@ -25,7 +25,8 @@ class Telescope:
                  diameter,
                  focalLength,
                  pupilReflectivity = 1.0,
-                 gpu_flag = False):
+                 gpu_flag = False,
+                 verbose=True):
 
         global global_gpu_flag
         self.pupil = pupil
@@ -53,10 +54,11 @@ class Telescope:
 
         ident = 20
         char = '-'
-        print(ident*char, 'TELESCOPE', ident*char)
-        print('Diameter \t\t\t'+str(self.D) + ' \t [m]') 
-        print('Pupil sampling \t\t\t'+str(self.pupil.shape[0]) + ' \t [pix]') 
-        print(int(ident*2.4)*char)
+        if verbose:
+            print(ident*char, 'TELESCOPE', ident*char)
+            print('Diameter \t\t\t'+str(self.D) + ' \t [m]') 
+            print('Pupil sampling \t\t\t'+str(self.pupil.shape[0]) + ' \t [pix]') 
+            print(int(ident*2.4)*char)
 
 
     @property
