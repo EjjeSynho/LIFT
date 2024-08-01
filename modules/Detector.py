@@ -5,7 +5,6 @@ from scipy import signal as sg
 try:
     import cupy as cp
 except ImportError or ModuleNotFoundError:
-    print('CuPy is not found, using NumPy backend...')
     cp = np
 
 

@@ -1,8 +1,9 @@
 #%%
+import os
 import numpy as np
 
 import sys
-sys.path.insert(0, '..')
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 try:
     import cupy as cp
@@ -11,7 +12,6 @@ try:
     global_gpu_flag = True
     
 except ImportError or ModuleNotFoundError:
-    print('CuPy is not found, using NumPy backend...')
     cp = np
     global_gpu_flag = False
 

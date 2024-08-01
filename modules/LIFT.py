@@ -14,7 +14,6 @@ try:
     global_gpu_flag = True
 
 except ImportError or ModuleNotFoundError:
-    print('CuPy is not found, using NumPy backend...')
     cp  = np
     csg = sg
     global_gpu_flag = False

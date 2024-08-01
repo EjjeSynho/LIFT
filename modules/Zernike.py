@@ -6,7 +6,6 @@ try:
     import cupy as cp
     global_gpu_flag = True
 except ImportError or ModuleNotFoundError:
-    print('CuPy is not found, using NumPy backend...')
     cp = np
     global_gpu_flag = False
 

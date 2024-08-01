@@ -5,7 +5,6 @@ try:
     global_gpu_flag = True
 
 except ImportError or ModuleNotFoundError:
-    print('CuPy is not found, using NumPy backend...')
     cp  = np
 
 class Source:   #   v-- is a list of turples, each turple is: (band, magnitude)
