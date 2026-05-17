@@ -5,7 +5,7 @@ sys.path.append("..")
 
 from matplotlib import pyplot as plt
 import numpy as np
-from tools.fit_gaussian import gaussian
+from .fit_gaussian import gaussian
 
 import numpy as np
 try:

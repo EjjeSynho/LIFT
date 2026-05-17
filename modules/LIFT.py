@@ -18,7 +18,7 @@ except ImportError or ModuleNotFoundError:
     csg = sg
     global_gpu_flag = False
 
-from tools.misc import binning
+from ..tools.misc import binning
 
 
 class LIFT:

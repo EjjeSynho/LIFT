@@ -9,14 +9,14 @@ import cupy as cp
 import numpy as np
 import matplotlib.pyplot as plt
 
-from modules.Telescope import Telescope
-from modules.Detector  import Detector
-from modules.Source    import Source
-from modules.Zernike   import Zernike
-from modules.LIFT      import LIFT
+from ..modules.Telescope import Telescope
+from ..modules.Detector  import Detector
+from ..modules.Source    import Source
+from ..modules.Zernike   import Zernike
+from ..modules.LIFT      import LIFT
 
-from tools.misc import mask_circle
-from tools.fit_gaussian import fitgaussian, gaussian
+from ..tools.misc import mask_circle
+from ..tools.fit_gaussian import fitgaussian, gaussian
 
 import json
 

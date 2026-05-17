@@ -15,7 +15,7 @@ except ImportError or ModuleNotFoundError:
     cp = np
     global_gpu_flag = False
 
-from tools.misc import binning
+from ..tools.misc import binning
 
 
 class Telescope:
@@ -43,10 +43,10 @@ class Telescope:
         self.oversampling      = 1                 # minimal PSF oversampling 
         self.gpu               = gpu_flag and global_gpu_flag
 
-        # if self.gpu:
-        #     self.pupil = cp.array(self.pupil, dtype=cp.float32)
-        #     if self.object is not None:
-        #         self.object = cp.array(self.tel.object, cp.float32)
+        if self.gpu:
+            self.pupil = cp.array(self.pupil, dtype=cp.float32)
+            if self.object is not None:
+                self.object = cp.array(self.object, dtype=cp.float32)
 
         self.area = np.pi * self.D**2 / 4
         self.fluxMap = lambda nPhotons, sampling_time: self.pupilReflectivity * self.pupil/self.pupil.sum() * nPhotons * self.area * sampling_time

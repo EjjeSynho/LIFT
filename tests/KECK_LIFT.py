@@ -23,7 +23,7 @@ from LIFT.modules.Zernike   import Zernike
 from LIFT.modules.LIFT      import LIFT
 
 # Local auxillary modules
-from tools.misc import draw_PSF_difference
+from LIFT.tools.misc import draw_PSF_difference
 import json
 
 with open('configs/path_info.json') as f:
