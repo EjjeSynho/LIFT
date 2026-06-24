@@ -70,7 +70,20 @@ class Source:   #   v-- is a list of turples, each turple is: (band, magnitude)
             'Na'  : [ 0.589e-6 , 0        , 3.3e12 ],
             'EOS' : [ 1.064e-6 , 0        , 3.3e12 ]
         }
-        self.__wavelengths = np.array( [v[0] for _,v in self.bands.items()] )
+        # Build interpolation grid from unique, non-zero-bandwidth entries only.
+        # Duplicate centre wavelengths (e.g. I1/I4, I2/I8, I5/I7/I9) and zero-
+        # bandwidth entries (Na, EOS) would cause division-by-zero or nonsensical
+        # interpolated bandwidths when PhotometricParameters is called with a float.
+        seen = set()
+        interp_entries = []
+        for v in self.bands.values():
+            wl = v[0]
+            if v[1] > 0 and wl not in seen:
+                seen.add(wl)
+                interp_entries.append(v)
+        interp_entries.sort(key=lambda v: v[0])
+        self.__interp_bands = interp_entries          # list of [wl, bw, zp], unique & sorted
+        self.__wavelengths  = np.array([v[0] for v in interp_entries])
 
 
     def PhotometricParameters(self, inp):
@@ -86,26 +99,15 @@ class Source:   #   v-- is a list of turples, each turple is: (band, magnitude)
                 print('Error: specified value is outside the defined wavelength range!')
                 return None
 
-            difference = np.abs(self.__wavelengths - inp)
-            dtype = [('number', int), ('value', float)]
+            # Find the two bracketing entries in the deduplicated, sorted grid.
+            idx = np.searchsorted(self.__wavelengths, inp)
+            idx = np.clip(idx, 1, len(self.__wavelengths) - 1)
+            p_1 = np.array(self.__interp_bands[idx - 1])
+            p_2 = np.array(self.__interp_bands[idx])
+            l_1, l_2 = p_1[0], p_2[0]
+            weight = (inp - l_1) / (l_2 - l_1)
 
-            sorted = np.sort(np.array([(num, val) for num,val in enumerate(difference)], dtype=dtype), order='value')                        
-
-            l_1 = self.__wavelengths[sorted[0][0]]
-            l_2 = self.__wavelengths[sorted[1][0]]
-
-            if l_1 > l_2: l_1, l_2 = l_2, l_1
-
-            def find_params(input):
-                for _,v in self.bands.items():
-                    if input == v[0]:
-                        return np.array(v)
-
-            p_1 = find_params(l_1)
-            p_2 = find_params(l_2)
-            weight = ( (np.array([l_1, inp, l_2])-l_1)/(l_2-l_1) )[1]
-
-            return weight*(p_2-p_1) + p_1
+            return weight * (p_2 - p_1) + p_1
 
         else:
             print('Incorrect input: "'+inp+'"')

@@ -6,8 +6,10 @@ sys.path.append("..")
 from matplotlib import pyplot as plt
 import numpy as np
 from .fit_gaussian import gaussian
+from ..modules.Source import Source
 
 import numpy as np
+
 try:
     import cupy as cp
 except ImportError or ModuleNotFoundError:
@@ -183,8 +185,19 @@ def NoisyPSF(tel, PSF, integrate=True):
     return tel.det.getFrame(PSF, noise=True, integrate=integrate)
 
 
-# %%
+def flat_spectrum_source(lambda_range, magnitude):
+    """Return a Source with equal photon flux across all wavelength channels."""\
+    # Build a flat photon-flux spectrum: adjust magnitudes to compensate for the
+    # wavelength-dependent zero-points so that flux_i = zp_i/368 * 10^(-0.4*mag_i)
+    # is constant across all channels.  At mag=0 the flux equals zp/368, so the
+    # ratio of zero-points is read directly from a temporary Source.
+    _tmp = Source([(float(λ), 0.0) for λ in lambda_range])
+    _zp  = np.array([pt['flux'] for pt in _tmp.spectrum])
+    mags = magnitude + 2.5 * np.log10(_zp / _zp[0])
+    return Source([(λ, mag) for λ, mag in zip(lambda_range, mags)])
 
+
+# %%
 try:
     import matplotlib.pyplot as plt
 except ImportError:
